@@ -106,15 +106,19 @@ void ViewWindow::SetDock(ImGuiID id)
 }
 
 void ViewWindow::RenderFileTree(DirectoryNode* node) {
+	if (node == &this->depotFiles)
+		ImGui::Indent();
 	for (int i = 0; i < node->Children.size(); i++) {
 		auto obj = node->Children[i];
 		if (obj->IsDirectory) {
+			ImGui::Unindent();
 			if (ImGui::TreeNode(to_string(obj->FileName).c_str())) {
 				ImGui::Indent();
 				RenderFileTree(obj);
 				ImGui::Unindent();
 				ImGui::TreePop();
 			}
+			ImGui::Indent();
 		}
 		else {
 			if (ImGui::MenuItem(to_string(obj->FileName).c_str(), NULL, selectedFile == node->Children.at(i))) {
@@ -123,7 +127,8 @@ void ViewWindow::RenderFileTree(DirectoryNode* node) {
 			}
 		}
 	}
-
+	if (node == &this->depotFiles)
+		ImGui::Unindent();
 }
 
 void ViewWindow::FreeNodes(DirectoryNode* node)
@@ -238,7 +243,7 @@ bool ViewWindow::Render()
 			ImGui::SetNextWindowFocus();
 		}
 		ImGui::Begin(("Binary##binary_" + buildFile->Name).c_str());
-		ImGui::InputTextMultiline(("##binary_" + buildFile->Name).c_str(), (char*)selectedFile->LoadedFile->Binary.c_str(), selectedFile->LoadedFile->Binary.size(), ImVec2(-1, -1), ImGuiInputTextFlags_ReadOnly);
+		ImGui::InputTextMultiline(("##binary_" + buildFile->Name).c_str(), (char*)selectedFile->LoadedFile->Binary.c_str(), selectedFile->LoadedFile->Binary.size(), ImVec2(-1, ImGui::GetContentRegionAvail().y - 30), ImGuiInputTextFlags_ReadOnly);
 		if (ImGui::InputInt("Current row", &this->currentBinaryRow)) {
 			if (this->currentBinaryRow < 0)
 				this->currentBinaryRow = 0;

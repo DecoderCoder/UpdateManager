@@ -10,11 +10,14 @@ std::map<UpdateManager::BuildFile*, std::pair<int, int>> UnpackingProgresses; //
 
 std::vector<UpdateManager::BuildFile*> openingBuilds;
 
+ImGuiID dockId;
+
 bool MainWindow::Render()
 {
 	bool disabled = false;
 
 	ImGui::Begin("Manager", &this->Opened, ImGuiWindowFlags_MenuBar);
+	dockId = ImGui::GetID("viewwindows_dock");
 	for (auto obj : UnpackingProgresses) {
 		ImGui::Text(("Openning " + obj.first->Name).c_str());
 		ImGui::ProgressBar((float)obj.second.first / (float)obj.second.second);
@@ -220,7 +223,6 @@ bool MainWindow::Render()
 					CreateThread(NULL, NULL, [](void* data) -> DWORD {
 						UpdateManager::BuildFile* openingBuild = openingBuilds.back(); // may cause misleading if you click another file faster than CreateThread was called (lol just try)
 
-						ImGuiID dockId = ImGui::GetID("viewwindows_dock");
 						if (!openingBuild->Downloaded)
 							openingBuild->DownloadDepot();
 						DownloadingCount--;
