@@ -1,0 +1,122 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="Manager.cpp" />
+    <ClCompile Include="Windows\MainWindow\MainWindow.cpp">
+      <Filter>Windows\MainWindow</Filter>
+    </ClCompile>
+    <ClCompile Include="Windows\ViewWindow\ViewWindow.cpp">
+      <Filter>Windows\ViewWindow</Filter>
+    </ClCompile>
+    <ClCompile Include="Windows\ImGuiWindow.cpp">
+      <Filter>Windows</Filter>
+    </ClCompile>
+    <ClCompile Include="DirectX\ImGui\imgui.cpp">
+      <Filter>DirectX\ImGui</Filter>
+    </ClCompile>
+    <ClCompile Include="DirectX\ImGui\imgui_demo.cpp">
+      <Filter>DirectX\ImGui</Filter>
+    </ClCompile>
+    <ClCompile Include="DirectX\ImGui\imgui_draw.cpp">
+      <Filter>DirectX\ImGui</Filter>
+    </ClCompile>
+    <ClCompile Include="DirectX\ImGui\imgui_tables.cpp">
+      <Filter>DirectX\ImGui</Filter>
+    </ClCompile>
+    <ClCompile Include="DirectX\ImGui\imgui_widgets.cpp">
+      <Filter>DirectX\ImGui</Filter>
+    </ClCompile>
+    <ClCompile Include="DirectX\ImGui\backends\imgui_impl_dx11.cpp">
+      <Filter>DirectX\ImGui</Filter>
+    </ClCompile>
+    <ClCompile Include="DirectX\ImGui\backends\imgui_impl_win32.cpp">
+      <Filter>DirectX\ImGui</Filter>
+    </ClCompile>
+    <ClCompile Include="UpdateManager\UpdateManager.cpp">
+      <Filter>UpdateManager</Filter>
+    </ClCompile>
+    <ClCompile Include="UpdateManager\Utils\jsoncpp\jsoncpp.cpp">
+      <Filter>UpdateManager\Utils\jsoncpp</Filter>
+    </ClCompile>
+    <ClCompile Include="DirectX\DirectX.cpp">
+      <Filter>DirectX</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Manager.h" />
+    <ClInclude Include="Windows\MainWindow\MainWindow.h">
+      <Filter>Windows\MainWindow</Filter>
+    </ClInclude>
+    <ClInclude Include="Windows\ViewWindow\ViewWindow.h">
+      <Filter>Windows\ViewWindow</Filter>
+    </ClInclude>
+    <ClInclude Include="UpdateManager\UpdateManager.h">
+      <Filter>UpdateManager</Filter>
+    </ClInclude>
+    <ClInclude Include="UpdateManager\Utils\colors.hpp">
+      <Filter>UpdateManager\Utils</Filter>
+    </ClInclude>
+    <ClInclude Include="UpdateManager\Utils\Logger.h">
+      <Filter>UpdateManager\Utils</Filter>
+    </ClInclude>
+    <ClInclude Include="UpdateManager\Utils\Utils.h">
+      <Filter>UpdateManager\Utils</Filter>
+    </ClInclude>
+    <ClInclude Include="UpdateManager\Utils\httplib\httplib.h">
+      <Filter>UpdateManager\Utils\httplib</Filter>
+    </ClInclude>
+    <ClInclude Include="UpdateManager\Utils\jsoncpp\json\json.h">
+      <Filter>UpdateManager\Utils\jsoncpp\json</Filter>
+    </ClInclude>
+    <ClInclude Include="UpdateManager\Utils\jsoncpp\json\json-forwards.h">
+      <Filter>UpdateManager\Utils\jsoncpp\json</Filter>
+    </ClInclude>
+    <ClInclude Include="DirectX\D3DX11tex.h">
+      <Filter>DirectX</Filter>
+    </ClInclude>
+    <ClInclude Include="DirectX\DirectX.h">
+      <Filter>DirectX</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\..\..\..\Program Files (x86)\Microsoft DirectX SDK (June 2010)\Include\D3DX11.h">
+      <Filter>DirectX</Filter>
+    </ClInclude>
+    <ClInclude Include="DirectX\D3DX11core.h">
+      <Filter>DirectX</Filter>
+    </ClInclude>
+    <ClInclude Include="DirectX\D3DX11async.h">
+      <Filter>DirectX</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="DirectX">
+      <UniqueIdentifier>{89a75a50-17a5-445b-aeeb-2ea5c213477e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="DirectX\ImGui">
+      <UniqueIdentifier>{21984160-83fd-4180-a9f3-f7dfca7a50a8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Windows">
+      <UniqueIdentifier>{5ca17b1b-9c49-4943-9af0-62e43e7bd591}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Windows\MainWindow">
+      <UniqueIdentifier>{d0698e48-2b00-4f87-97f4-358a44041f99}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Windows\ViewWindow">
+      <UniqueIdentifier>{40c3626d-542b-4cc1-a243-9386b923d161}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="UpdateManager">
+      <UniqueIdentifier>{aa082b3d-fb5c-4f80-8d5c-0b42c9f4d350}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="UpdateManager\Utils">
+      <UniqueIdentifier>{5fe6d258-ffdf-4498-bf59-1dfcf24b12f3}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="UpdateManager\Utils\jsoncpp">
+      <UniqueIdentifier>{3cff80ae-1cbb-4303-b572-6f91400ed052}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="UpdateManager\Utils\httplib">
+      <UniqueIdentifier>{31d2f447-2c2c-4b16-bb6c-41d38b9ec1bd}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="UpdateManager\Utils\jsoncpp\json">
+      <UniqueIdentifier>{a5c23ec9-c0b3-4620-8f85-0b1c46af4f29}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>
