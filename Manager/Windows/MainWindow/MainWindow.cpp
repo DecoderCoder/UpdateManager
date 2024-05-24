@@ -1,5 +1,7 @@
 #include "MainWindow.h"
 
+char inputBuffer[256];
+
 int selectedHost = -1;
 int selectedApp = -1;
 int selectedBuild = -1;
@@ -12,11 +14,14 @@ std::vector<UpdateManager::BuildFile*> openingBuilds;
 
 ImGuiID dockId;
 
+KeyManagerWindow* keyManagerWindow;
+
 bool MainWindow::Render()
 {
 	bool disabled = false;
 
-	ImGui::Begin("Manager", &this->Opened, ImGuiWindowFlags_MenuBar);
+	ImGui::GetStyle().WindowTitleAlign = ImVec2(0.5f, 0.5f);
+	ImGui::Begin(_PROJECTNAME, &this->Opened, ImGuiWindowFlags_MenuBar);
 	dockId = ImGui::GetID("viewwindows_dock");
 	for (auto obj : UnpackingProgresses) {
 		ImGui::Text(("Openning " + obj.first->Name).c_str());
@@ -40,21 +45,28 @@ bool MainWindow::Render()
 		if (ImGui::BeginMenu(_PROJECTNAME))
 		{
 			ImGui::MenuItem("Settings");
-			ImGui::MenuItem("Keys Manager");
+			if (ImGui::MenuItem("Keys Manager")) {
+				keyManagerWindow = new KeyManagerWindow();
+				keyManagerWindow->Show();
+			}
 			ImGui::MenuItem("About");
 			ImGui::EndMenu();
 		}
+		if (selectedApp < 0)
+			ImGui::BeginDisabled();
 		if (ImGui::BeginMenu("Build")) {
 
-			ImGui::MenuItem("View keys");
+			//ImGui::MenuItem("View keys");
 
 			ImGui::EndMenu();
 		}
+		if (selectedApp < 0)
+			ImGui::EndDisabled();
 		ImGui::EndMenuBar();
 	}
 
 	ImGui::Columns(3);
-
+	ImGui::Text("Hosts");
 	ImGui::PushItemWidth(-1);
 	if (ImGui::BeginListBox("##host")) {
 		for (int i = 0; i < UpdateManager::GetHosts()->size(); i++) {
@@ -68,8 +80,17 @@ bool MainWindow::Render()
 
 		ImGui::EndListBox();
 	}
-	ImGui::Button("+", ImVec2(30, 0));
+	if (ImGui::Button("+##host", ImVec2(30, 0))) {
+		ImGui::OpenPopup("Add Host");
+	}
+	ImGui::SameLine();
+	// ImGui::SameLine(ImGui::GetContentRegionAvail().x - 30 + ImGui::GetStyle().FramePadding.x + 2);
+	if (ImGui::Button("-##host", ImVec2(30, 0))) {
+		ImGui::OpenPopup("Remove Host");
+	}
+
 	ImGui::NextColumn();
+	ImGui::Text("Apps");
 	ImGui::PushItemWidth(-1);
 	if (ImGui::BeginListBox("##app")) {
 		if (selectedHost > -1) {
@@ -97,27 +118,37 @@ bool MainWindow::Render()
 		ImGui::EndDisabled();
 	}
 	ImGui::NextColumn();
+	ImGui::Text("Builds");
 	ImGui::PushItemWidth(-1);
-
 	if (ImGui::BeginListBox("##build")) {
 		if (selectedApp > -1) {
 			auto builds = UpdateManager::GetHosts()->at(selectedHost).GetVersions()->at(selectedApp).GetBuilds();
-			for (int i = 0; i < builds->size(); i++) {
-				auto build = builds->at(i);
-				if (build.LastBuild)
-					ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.18f, 0.8f, 0.443f, 1)); // #2ecc71
-				else
-					if (!build.App->Host->IsAdmin)
-						ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.584f, 0.647f, 0.651f, 1)); // #95a5a6
-				if (ImGui::Selectable(build.Id.c_str(), i == selectedBuild)) {
+			for (int i = 0; i < builds->size(); i++) {\
+				UpdateManager::Build* build = &builds->at(i);
+				if (!build->LastBuild)
+					if (!build->App->Host->IsAdmin && !build->HasDetails())
+						ImGui::BeginDisabled();
+				if (ImGui::Selectable(build->Id.c_str(), i == selectedBuild)) {
 					selectedBuild = i;
 					selectedFile.clear();
 				}
-				if (build.LastBuild)
-					ImGui::PopStyleColor();
+				const char* statusText;
+				if (build->LastBuild) {
+					statusText = "Last build";
+					ImGui::PushStyleColor(ImGuiCol_TextDisabled, ImVec4(0.18f, 0.8f, 0.443f, 1));
+				}
 				else
-					if (!build.App->Host->IsAdmin)
-						ImGui::PopStyleColor();
+					if (build->App->Host->IsAdmin)
+						statusText = "Available";
+					else
+						statusText = "Not available";
+				ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - ImGui::CalcTextSize(statusText).x);
+				ImGui::TextDisabled(statusText);
+				if (build->LastBuild)
+					ImGui::PopStyleColor();
+				if (!build->LastBuild)
+					if (!build->App->Host->IsAdmin && !build->HasDetails())
+						ImGui::EndDisabled();
 			}
 		}
 		ImGui::EndListBox();
@@ -136,9 +167,18 @@ bool MainWindow::Render()
 	}
 
 	ImGui::Columns(1);
-	ImGui::PushItemWidth(-1);
 
-	if (ImGui::BeginListBox("##files", ImVec2(0, 300))) {
+	ImGui::BeginChild("##files", ImVec2(0, 400), ImGuiChildFlags_Border);
+	{
+		auto filesText = "Files";
+		auto windowWidth = ImGui::GetContentRegionAvail().x;
+		auto textWidth = ImGui::CalcTextSize(filesText).x;
+
+		ImGui::SetCursorPosX((windowWidth - textWidth) * 0.5f - ImGui::GetStyle().ItemInnerSpacing.x);
+		ImGui::Text(filesText);
+	}
+	ImGui::PushItemWidth(-1);
+	if (ImGui::BeginListBox("##files", ImVec2(0, ImGui::GetContentRegionAvail().y))) {
 		if (selectedBuild > -1) {
 			auto build = &UpdateManager::GetHosts()->at(selectedHost).GetVersions()->at(selectedApp).GetBuilds()->at(selectedBuild);
 			auto files = build->GetFiles();
@@ -236,11 +276,13 @@ bool MainWindow::Render()
 						}
 						if (!openedWindow) {
 							UnpackingProgresses[openingBuild] = make_pair(0, 1);
-							openingBuild->UnpackDepot(&UnpackingProgresses[openingBuild].first, &UnpackingProgresses[openingBuild].second);
+							if (openingBuild->UnpackDepot(&UnpackingProgresses[openingBuild].first, &UnpackingProgresses[openingBuild].second) == BuildFile::UnpackResult::Success) {
+								ViewWindow* window = new ViewWindow(openingBuild);
+								window->SetDock(dockId);
+							}
 							UnpackingProgresses.erase(UnpackingProgresses.find(openingBuild));
 							openingBuilds.erase(std::find(openingBuilds.begin(), openingBuilds.end(), openingBuild));
-							ViewWindow* window = new ViewWindow(openingBuild);
-							window->SetDock(dockId);
+
 							return 0;
 
 						}
@@ -251,9 +293,7 @@ bool MainWindow::Render()
 				}
 
 				ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - ImGui::CalcTextSize(text).x);
-				ImGui::BeginDisabled();
-				ImGui::Text(text);
-				ImGui::EndDisabled();
+				ImGui::TextDisabled(text);
 
 				if (!build->App->Host->IsAdmin && !build->LastBuild && !files->at(i).Downloaded) {
 					ImGui::EndDisabled();
@@ -264,13 +304,46 @@ bool MainWindow::Render()
 
 		ImGui::EndListBox();
 	}
+	ImGui::EndChild();
 
 	ImGui::Spacing();
 
-	ImGui::Button("Open", ImVec2(-1, 0));
+	if (selectedBuild == -1)
+		ImGui::BeginDisabled();
+	ImGui::Button("Download all", ImVec2(ImGui::GetContentRegionAvail().x / 2 - 10, 0));
+	if (selectedBuild == -1)
+		ImGui::EndDisabled();
+	ImGui::SameLine();
+	ImGui::Button("Open", ImVec2(ImGui::GetContentRegionAvail().x, 0));
 	ImGui::Spacing();
-	//ImGui::PushItemWidth(-1);
-	//ImGui::ProgressBar(0);
+
+	//ImGuiWindowClass windowClass;
+	//windowClass.ViewportFlagsOverrideSet = ImGuiViewportFlags_TopMost;
+	//ImGui::SetNextWindowClass(&windowClass);
+	if (ImGui::BeginPopupModal("Add Host", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) {
+		ImGui::InputText("##hostinput", inputBuffer, sizeof(inputBuffer));
+		{
+			auto filesText = "Use only SSL protoctol";
+			auto windowWidth = ImGui::GetContentRegionAvail().x;
+			auto textWidth = ImGui::CalcTextSize(filesText).x;
+
+			ImGui::SetCursorPosX((windowWidth - textWidth) * 0.5f + 10);
+			ImGui::TextDisabled(filesText);
+			ImGui::Spacing();
+			ImGui::Spacing();
+		}
+		if (ImGui::Button("Add", ImVec2(ImGui::GetContentRegionAvail().x / 2 - ImGui::GetStyle().ItemInnerSpacing.x, 0))) {
+			fs::create_directories(UpdateManager::GetExecutableFolder().wstring() + L"\\updates\\" + to_wstring(string(inputBuffer)));
+			UpdateManager::GetHosts(true);
+			ImGui::CloseCurrentPopup();
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("Cancel", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
+			ImGui::CloseCurrentPopup();
+		}
+		ImGui::EndPopup();
+	}
+
 	ImGui::End();
 
 	return true;

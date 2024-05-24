@@ -9,6 +9,8 @@ bool ViewWindow::IsSelectedChanged() {	// to prevent code dup
 }
 
 void ViewWindow::ParseFiles(wstring path, DirectoryNode* parentNode) {
+	if (!fs::exists(path))
+		return;
 	parentNode->FullPath = path;
 	parentNode->FileName = fs::path(path).filename().wstring();
 	parentNode->IsDirectory = true;
@@ -185,7 +187,7 @@ bool ViewWindow::Render()
 			}
 			if (this->buildFile->CheckDepot() != UpdateManager::BuildFile::UnpackResult::Success)
 				ImGui::EndDisabled();
-
+			ImGui::Separator();
 			if (!selectedFile)
 				ImGui::BeginDisabled();
 			if (ImGui::MenuItem("Show selected file")) {
@@ -210,12 +212,15 @@ bool ViewWindow::Render()
 		ImGui::EndListBox();
 	}*/
 
+	ImGui::BeginChild("##treeView");
 	RenderFileTree(&depotFiles);
+	ImGui::EndChild();
 
 	ImGui::NextColumn();
 	if (selectedFile && selectedFile->LoadedFile) {
 		ImGui::DockSpace(filesDock, ImVec2(0, 0), 0, &viewClass);
 
+		// Text file
 		ImGui::SetNextWindowDockID(filesDock, ImGuiCond_Once);
 		ImGui::SetNextWindowClass(&viewClass);
 		if (selectedFile->LoadedFile->FileType == LoadedFileType::Text && IsSelectedChanged()) {
@@ -226,17 +231,21 @@ bool ViewWindow::Render()
 		ImGui::InputTextMultiline(("##text_" + buildFile->Name).c_str(), (char*)selectedFile->LoadedFile->Text.c_str(), selectedFile->LoadedFile->Text.size(), ImVec2(-1, -1), ImGuiInputTextFlags_ReadOnly);
 		ImGui::End();
 
-
-
+		// Image file
 		ImGui::SetNextWindowDockID(filesDock, ImGuiCond_Once);
 		ImGui::SetNextWindowClass(&viewClass);
 		if (selectedFile->LoadedFile->FileType == LoadedFileType::Image && IsSelectedChanged()) {
 			ImGui::SetNextWindowFocus();
 		}
 		ImGui::Begin(("Image##image_" + buildFile->Name).c_str());
-		ImGui::Image(selectedFile->LoadedFile->Image, ImVec2(100, 100));
+		if (selectedFile->LoadedFile->Image && DirectX::LoadedImages.find(selectedFile->LoadedFile->Image) != DirectX::LoadedImages.end()) {
+			DirectX::LoadedImage info = DirectX::LoadedImages[selectedFile->LoadedFile->Image]; // there always will be info about image
+			float aspect = (float)info.Width / (float)max(info.Height, 1);
+			ImGui::Image(selectedFile->LoadedFile->Image, ImVec2(ImGui::GetContentRegionAvail().x, ImGui::GetContentRegionAvail().x / aspect));
+		}
 		ImGui::End();
 
+		// Binary file
 		ImGui::SetNextWindowDockID(filesDock, ImGuiCond_Once);
 		ImGui::SetNextWindowClass(&viewClass);
 		if (selectedFile->LoadedFile->FileType == LoadedFileType::Binary && IsSelectedChanged()) {
@@ -257,18 +266,12 @@ bool ViewWindow::Render()
 		}
 
 		ImGui::End();
-
-
 	}
 	ImGui::Columns(1);
-
-
 
 	//ImVec2 center = ImGui::GetMainViewport()->GetCenter();
 	//ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
 	//if (ImGui::BeginPopupModal("File is missing")) {
-
-
 
 	//	ImGui::EndPopup();
 	//}

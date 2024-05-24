@@ -103,8 +103,24 @@ bool DirectX::LoadTextureFromFile(std::wstring filename, ID3D11ShaderResourceVie
 {
 	D3DX11_IMAGE_LOAD_INFO info;
 	ID3DX11ThreadPump* pump{ nullptr };
-	D3DX11CreateShaderResourceViewFromFileW(g_pd3dDevice, filename.c_str(), &info, pump, &out, 0);
-	return true;
+	if (SUCCEEDED(D3DX11CreateShaderResourceViewFromFileW(g_pd3dDevice, filename.c_str(), &info, pump, &out, 0))) {
+		ID3D11Resource* res;
+		D3D11_TEXTURE2D_DESC desc;
+		ID3D11Texture2D* tx2;
+
+		out->GetResource(&res);
+		tx2 = (ID3D11Texture2D*)res;
+		tx2->GetDesc(&desc);
+
+		LoadedImage image;
+		image.FileName = filename;
+		image.LoadedFromMemory = false;
+		image.Width = desc.Width;
+		image.Height = desc.Height;
+		DirectX::LoadedImages[out] = image;
+		return true;
+	}	
+	return false;
 }
 
 void DirectX::Init()

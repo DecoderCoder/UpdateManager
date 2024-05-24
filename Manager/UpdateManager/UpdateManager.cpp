@@ -1,6 +1,5 @@
 #include "UpdateManager.h"
 #include "Utils/httplib/httplib.h"
-#include "Utils/jsoncpp/json/json.h"
 
 string UpdateManager::BuildFile::DFileTypeToString(BuildFile::DFileType type)
 {
@@ -12,8 +11,8 @@ string UpdateManager::BuildFile::DFileTypeToString(BuildFile::DFileType type)
 		return "Encrypted";
 	case BuildFile::DFileType::EncryptedFile:
 		return "EncryptedFile";
-	case BuildFile::DFileType::Key:
-		return "Key";
+		/*case BuildFile::DFileType::Key:
+			return "Key";*/
 	}
 	return "Unknown";
 }
@@ -71,6 +70,17 @@ vector<App>* UpdateManager::Host::GetVersions(bool enforce)
 	return &this->Apps;
 }
 
+KeyManager::Key UpdateManager::Host::GetKey(string name)
+{
+	for (auto group : this->accessGroup) {
+		for (auto key : group.second) {
+			if (key.Name == name)
+				return key;
+		}
+	}
+	return KeyManager::Key();
+}
+
 std::optional<Json::Value> GetDetailsJSON(string host, string ver, string ghub) {
 	httplib::Client cli("https://" + host);
 	auto res = cli.Get("/pipeline/" + ver + "/update/" + ghub + "/win/public/details.json");
@@ -82,7 +92,18 @@ std::optional<Json::Value> GetDetailsJSON(string host, string ver, string ghub) 
 	return root;
 }
 
-std::optional<Json::Value> GetDetailsJSON(string json) {
+std::optional<Json::Value> GetAccessGroupJSON(string host, string accessGroup) {
+	httplib::Client cli("https://" + host);
+	auto res = cli.Get("https://updates.ghub.logitechg.com/pipeline/v2/access/" + accessGroup + "/content.json");
+	if (res->status != 200)
+		return nullopt;
+	Json::Value root;
+	Json::Reader reader;
+	reader.parse(res->body, root);
+	return root;
+}
+
+std::optional<Json::Value> GetJSONFromString(string json) {
 	/*if (res->status != 200)
 		return nullopt;*/
 	Json::Value root;
@@ -109,7 +130,7 @@ vector<Build>* UpdateManager::App::GetBuilds(bool enforce)
 			fs::create_directories(buildDirectory);
 
 		WriteToFile(buildDirectory + L"\\details.json", lastBuild.value().toStyledString());
-		Log("Found last build on the server: " + lastBuildId);
+		Log("Found last build on the server: " + dye::light_green(lastBuildId));
 	}
 
 	std::vector<Build> ret = std::vector<Build>();
@@ -137,12 +158,20 @@ vector<Build>* UpdateManager::App::GetBuilds(bool enforce)
 				auto buildDetailsDir = buildFolder + to_wstring(newBuild->Id) + L"\\details.json";
 				if (fs::exists(buildDetailsDir))
 				{
-					details = GetDetailsJSON(ReadFromFile(buildDetailsDir));
-					Log("Found local \"details.json\" for build: " + details.value()["buildId"].asString());
+					details = GetJSONFromString(ReadFromFile(buildDetailsDir));
+					Log("Found local \"" + dye::light_yellow("details.json") + "\" for build: " + dye::aqua(details.value()["buildId"].asString()));
 				}
 			}
 
 			if (details.has_value()) {
+				if (details.value().isMember("keys") && details.value()["keys"].isMember("accessGroup")) {
+					Log("Found Access Group " + dye::light_aqua(details.value()["keys"]["accessGroup"].asString()) + " in " + dye::aqua(newBuild->Id) + " build");
+					std::optional<Json::Value> content = GetAccessGroupJSON(this->Host->Uri, details.value()["keys"]["accessGroup"].asString());
+					if (content.has_value()) {
+						KeyManager::LoadKeysFromJSON(this->Host, content.value());
+					}
+				}
+
 				for (unsigned int i = 0; i < details.value()["depots"].size(); i++) {
 					auto d = details.value()["depots"][i];
 					BuildFile newBuildFile;
@@ -167,6 +196,15 @@ vector<Build>* UpdateManager::App::GetBuilds(bool enforce)
 vector<BuildFile>* UpdateManager::Build::GetFiles()
 {
 	return &this->Files;
+}
+
+bool UpdateManager::Build::HasDetails()
+{
+	if (!this->hasDetailsChecked) {
+		this->hasDetails = fs::exists(GetExecutableFolder().wstring() + L"\\updates\\" + to_wstring(this->App->Host->Uri) + L"\\" + to_wstring(this->App->Id) + L"\\" + to_wstring(this->Id) + L"\\details.json");
+		this->hasDetailsChecked = true;
+	}
+	return this->hasDetails;
 }
 
 void UpdateManager::BuildFile::DownloadDepot()
@@ -212,7 +250,7 @@ BuildFile::LoadResult UpdateManager::BuildFile::LoadDepot(bool force)
 
 	this->FileType = *(BuildFile::DFileType*)this->Depot;
 	{
-		int validEnum = (int)BuildFile::DFileType::Default | (int)BuildFile::DFileType::Encrypted | (int)BuildFile::DFileType::EncryptedFile | (int)BuildFile::DFileType::Key;
+		int validEnum = (int)BuildFile::DFileType::Default | (int)BuildFile::DFileType::Encrypted | (int)BuildFile::DFileType::EncryptedFile;// | (int)BuildFile::DFileType::Key;
 		if (!((int)this->FileType & validEnum))
 		{
 			free(this->Depot);
@@ -249,6 +287,29 @@ BuildFile::UnpackResult UpdateManager::BuildFile::CheckDepot(bool force)
 		{
 			this->lastCheckResult = BuildFile::UnpackResult::LoadError;
 			return BuildFile::UnpackResult::LoadError;
+		}
+	}
+	else {
+		if (this->FileType == DFileType::Encrypted)
+		{
+			Json::Value JSONData;
+			unsigned int JSONLength = *(unsigned int*)(this->Depot + sizeof(BuildFile::DFileType));
+			{
+				Json::Reader reader;
+
+				string json = string(this->Depot + sizeof(BuildFile::DFileType) + sizeof(unsigned int), this->Depot + sizeof(BuildFile::DFileType) + sizeof(unsigned int) + JSONLength);
+				reader.parse(json, JSONData);
+			}
+
+			this->headerSha = JSONData["header-sha"].asString();
+			string keyId = JSONData["key-id"].asString();
+			KeyManager::Key key = this->Build->App->Host->GetKey(keyId);
+			if (!key.IsValid())
+			{
+				this->lastUnpackResult == UnpackResult::KeyNotFound;
+				return this->lastUnpackResult;
+			}
+			this->Key = key;
 		}
 	}
 
@@ -294,18 +355,33 @@ BuildFile::UnpackResult UpdateManager::BuildFile::UnpackDepot(int* progress, int
 		*progress = 0;
 	if (progressMax)
 		*progressMax = JSONData["files"].size();
-	for (unsigned int i = 0; i < JSONData["files"].size(); i++) {
-		string fileName = JSONData["files"][i]["name"].asString();
-		//Log("Unpacking file " + fileName);
-		wstring filePathStr = this->UnpackedDir + L"\\" + to_wstring(fileName);
-		std::replace(filePathStr.begin(), filePathStr.end(), L'/', L'\\');
-		fs::path filePath = fs::path(filePathStr).parent_path();
+
+
+	for (unsigned int i = 0; i < JSONData["files"].size() || offset < this->DepotSize; i++) {
+		//wstring filePathStr = this->UnpackedDir + L"\\" + to_wstring(fileName);
+		//std::replace(filePathStr.begin(), filePathStr.end(), L'/', L'\\');
+		//fs::path filePath = fs::path(filePathStr).parent_path();
 
 
 		unsigned int fileSize = *(unsigned int*)(this->Depot + offset);
 		offset += sizeof(unsigned int);
-		fs::create_directories(filePath);
-		WriteToFile(this->UnpackedDir + L"\\" + to_wstring(fileName), this->Depot + offset, fileSize);
+		if (this->FileType == DFileType::Encrypted && i == 0) {
+			auto jsondata = DecryptAES(string(this->Depot + offset, fileSize), this->Key.Key, GetIV(this->headerSha, this->Key.Name));
+			JSONData = GetJSONFromString(jsondata).value();
+			offset += fileSize;
+			continue;
+		}
+
+		string fileName = JSONData["files"][(this->FileType == DFileType::Encrypted ? i - 1 : i)]["name"].asString();
+		fs::create_directories(this->UnpackedDir);
+		if (this->FileType == DFileType::Default)
+			WriteToFile(this->UnpackedDir + L"\\" + to_wstring(fileName), this->Depot + offset, fileSize);
+		else
+		{
+			string decryptedData = DecryptAES(string(this->Depot + offset, fileSize), this->Key.Key, GetIV(JSONData["files"][(this->FileType == DFileType::Encrypted ? i - 1 : i)]["sha"].asString(), this->Key.Name));
+			WriteToFile(this->UnpackedDir + L"\\" + to_wstring(fileName), decryptedData.data(), decryptedData.size());
+		}
+
 		offset += fileSize;
 		Log("Unpacked file " + fileName + ", Size: " + to_string(fileSize));
 		if (progress != nullptr)
@@ -324,4 +400,35 @@ BuildFile::UnpackResult UpdateManager::BuildFile::UnpackDepot(int* progress, int
 BuildFile::UnpackResult UpdateManager::BuildFile::UnpackDepot(bool force)
 {
 	return UnpackDepot(nullptr, nullptr, force);
+}
+
+void UpdateManager::KeyManager::LoadKeysFromJSON(UpdateManager::Host* host, Json::Value json)
+{
+	string group = json["accessGroup"].asString();
+	for (auto obj : json["keys"]) {
+		KeyManager::Key newKey;
+		newKey.Name = obj["name"].asString();
+		newKey.Key = obj["key"].asString();
+		/*if (KeyManager::accessGroup[group].Key == newKey.Key && KeyManager::accessGroup[group].Name)
+			KeyManager::accessGroup[group] = newKey;*/
+		for (auto obj : host->accessGroup[group]) {
+			if (obj.Key == newKey.Key && obj.Name == newKey.Name)
+				continue;
+		}
+		host->accessGroup[group].push_back(newKey);
+		Log("Added new key (" + dye::aqua(newKey.Name) + ") to accessGroup (" + dye::light_aqua(group) + ")");
+	}
+}
+
+void UpdateManager::KeyManager::LoadKeysFromJSON(UpdateManager::Host* host, string json)
+{
+	// https://updates.ghub.logitechg.com/pipeline/v2/update/ghub10/win/public/details.json
+
+}
+
+bool UpdateManager::KeyManager::Key::IsValid()
+{
+	if (this->Name == "" || this->Key == "") // I know that it's not necessary to check name, but just in case
+		return false;
+	return true;
 }

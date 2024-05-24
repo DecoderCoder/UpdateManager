@@ -41,6 +41,9 @@
     <ClCompile Include="DirectX\DirectX.cpp">
       <Filter>DirectX</Filter>
     </ClCompile>
+    <ClCompile Include="Windows\KeyManagerWindow\KeyManagerWindow.cpp">
+      <Filter>Windows\KeyManagerWindow</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Manager.h" />
@@ -86,6 +89,15 @@
     <ClInclude Include="DirectX\D3DX11async.h">
       <Filter>DirectX</Filter>
     </ClInclude>
+    <ClInclude Include="Windows\KeyManagerWindow\KeyManagerWindow.h">
+      <Filter>Windows\KeyManagerWindow</Filter>
+    </ClInclude>
+    <ClInclude Include="UpdateManager\Utils\Encryption.h">
+      <Filter>UpdateManager\Utils</Filter>
+    </ClInclude>
+    <ClInclude Include="UpdateManager\Utils\Base64.hpp">
+      <Filter>UpdateManager\Utils</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="DirectX">
@@ -117,6 +129,9 @@
     </Filter>
     <Filter Include="UpdateManager\Utils\jsoncpp\json">
       <UniqueIdentifier>{a5c23ec9-c0b3-4620-8f85-0b1c46af4f29}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Windows\KeyManagerWindow">
+      <UniqueIdentifier>{e09eacfb-a069-4d27-a619-74c9c4035294}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
 </Project>
