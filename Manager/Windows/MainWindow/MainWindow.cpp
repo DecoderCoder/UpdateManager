@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 
-char inputBuffer[256];
+char searchBuffer[256] = { 0 };
+char inputBuffer[256] = { 0 };
 
 int selectedHost = -1;
 int selectedApp = -1;
@@ -123,8 +124,9 @@ bool MainWindow::Render()
 	if (ImGui::BeginListBox("##build")) {
 		if (selectedApp > -1) {
 			auto builds = UpdateManager::GetHosts()->at(selectedHost).GetVersions()->at(selectedApp).GetBuilds();
-			for (int i = 0; i < builds->size(); i++) {\
-				UpdateManager::Build* build = &builds->at(i);
+			for (int i = 0; i < builds->size(); i++) {
+				\
+					UpdateManager::Build* build = &builds->at(i);
 				if (!build->LastBuild)
 					if (!build->App->Host->IsAdmin && !build->HasDetails())
 						ImGui::BeginDisabled();
@@ -168,6 +170,9 @@ bool MainWindow::Render()
 
 	ImGui::Columns(1);
 
+	ImGui::Text("Search by name");
+	ImGui::SetNextItemWidth(-1);
+	ImGui::InputText("##searchinput", searchBuffer, sizeof(searchBuffer));
 	ImGui::BeginChild("##files", ImVec2(0, 400), ImGuiChildFlags_Border);
 	{
 		auto filesText = "Files";
@@ -183,11 +188,18 @@ bool MainWindow::Render()
 			auto build = &UpdateManager::GetHosts()->at(selectedHost).GetVersions()->at(selectedApp).GetBuilds()->at(selectedBuild);
 			auto files = build->GetFiles();
 			for (int i = 0; i < files->size(); i++) {
-				if (!build->App->Host->IsAdmin && !build->LastBuild && !files->at(i).Downloaded) {
+				BuildFile* file = &files->at(i);
+				string search = string(searchBuffer);
+				if (search != "") {
+					if (file->Name.find(search) == string::npos)
+						continue;
+				}
+
+				if (!build->App->Host->IsAdmin && !build->LastBuild && !file->Downloaded) {
 					ImGui::BeginDisabled();
 				}
 
-				if (ImGui::Selectable(files->at(i).Name.c_str(), std::find(selectedFile.begin(), selectedFile.end(), i) != selectedFile.end()))
+				if (ImGui::Selectable(file->Name.c_str(), std::find(selectedFile.begin(), selectedFile.end(), i) != selectedFile.end()))
 				{
 					if (GetAsyncKeyState(VK_CONTROL)) {
 						if (std::find(selectedFile.begin(), selectedFile.end(), i) != selectedFile.end())
@@ -202,14 +214,14 @@ bool MainWindow::Render()
 				}
 
 				const char* text;
-				if (!build->App->Host->IsAdmin && !build->LastBuild && !files->at(i).Downloaded) {
+				if (!build->App->Host->IsAdmin && !build->LastBuild && !file->Downloaded) {
 					text = "Not available";
 				}
 				else {
-					if (files->at(i).Downloaded) {
-						switch (files->at(i).LoadDepot(false)) {
+					if (file->Downloaded) {
+						switch (file->LoadDepot(false)) {
 						case BuildFile::LoadResult::Success: {
-							switch (files->at(i).CheckDepot(false)) {
+							switch (file->CheckDepot(false)) {
 							case BuildFile::UnpackResult::Success: {
 								text = "Unpacked";
 								break;
@@ -257,7 +269,7 @@ bool MainWindow::Render()
 				if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0))
 				{
 					// Do stuff on Selectable() double click.
-					openingBuilds.push_back(&files->at(i)); // may cause misli
+					openingBuilds.push_back(file); // may cause misli
 
 					DownloadingCount++;
 					CreateThread(NULL, NULL, [](void* data) -> DWORD {
@@ -293,9 +305,21 @@ bool MainWindow::Render()
 				}
 
 				ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - ImGui::CalcTextSize(text).x);
-				ImGui::TextDisabled(text);
+				if (strcmp(text, "Key not found") == 0) { // I'm 2lazy to do this at CheckDepot ;(
+					ImGui::PushStyleColor(ImGuiCol_TextDisabled, ImVec4(0.91f, 0.30f, 0.24f, 1.f));
+					ImGui::TextDisabled(text);
+					ImGui::PopStyleColor();
+				}
+				else if (strcmp(text, "Unpacked") == 0) {
+					ImGui::PushStyleColor(ImGuiCol_TextDisabled, ImVec4(0.18f, 0.8f, 0.443f, 1));
+					ImGui::TextDisabled(text);
+					ImGui::PopStyleColor();
+				}
+				else {
+					ImGui::TextDisabled(text);
+				}
 
-				if (!build->App->Host->IsAdmin && !build->LastBuild && !files->at(i).Downloaded) {
+				if (!build->App->Host->IsAdmin && !build->LastBuild && !file->Downloaded) {
 					ImGui::EndDisabled();
 				}
 			}
@@ -336,6 +360,7 @@ bool MainWindow::Render()
 			fs::create_directories(UpdateManager::GetExecutableFolder().wstring() + L"\\updates\\" + to_wstring(string(inputBuffer)));
 			UpdateManager::GetHosts(true);
 			ImGui::CloseCurrentPopup();
+			memset(inputBuffer, 0, sizeof(inputBuffer));
 		}
 		ImGui::SameLine();
 		if (ImGui::Button("Cancel", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {

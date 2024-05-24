@@ -1,7 +1,7 @@
 #include "ViewWindow.h"
 #include "../../DirectX/D3DX11tex.h"
 
-bool ViewWindow::IsSelectedChanged() {	// to prevent code dup 
+bool ViewWindow::IsSelectedChanged() {	// to prevent code dup // upd: imgui has bug that SetNextWindowFocus not working in some cases
 	bool temp = selectedChanged;
 	if (selectedChanged)
 		selectedChanged = false;
@@ -126,6 +126,7 @@ ViewWindow::ViewWindow(BuildFile* b) : Window()
 	parsingFiles = true;
 	ParseFiles(this->buildFile->UnpackedDir, &depotFiles);
 	parsingFiles = false;
+	selectedChanged = false;
 }
 
 void ViewWindow::Close()
@@ -133,6 +134,7 @@ void ViewWindow::Close()
 	this->FreeNodes(&this->depotFiles);
 	this->buildFile->UnloadDepot();
 	if (this->createdByFile) {
+		fs::remove_all(this->buildFile->UnpackedDir);
 		delete(this->buildFile);
 	}
 	Window::Close();

@@ -243,7 +243,7 @@ BuildFile::LoadResult UpdateManager::BuildFile::LoadDepot(bool force)
 		//this->Depot = nullptr;
 		Log("Failed to load file " + this->Name + ", Error: UnknownError (malloc failed)");
 		this->lastLoadResult = LoadResult::UnknownError;
-		return LoadResult::UnknownError;
+		return this->lastLoadResult;
 	}
 	memset(this->Depot, 0, depotSize);
 	ReadBinaryFile(this->FullPath, this->Depot, depotSize);
@@ -316,7 +316,7 @@ BuildFile::UnpackResult UpdateManager::BuildFile::CheckDepot(bool force)
 			KeyManager::Key key = this->Build->App->Host->GetKey(keyId);
 			if (!key.IsValid())
 			{
-				this->lastUnpackResult == UnpackResult::KeyNotFound;
+				this->lastUnpackResult = UnpackResult::KeyNotFound;
 				return this->lastUnpackResult;
 			}
 			this->Key = key;
@@ -389,9 +389,9 @@ BuildFile::UnpackResult UpdateManager::BuildFile::UnpackDepot(int* progress, int
 			*progressMax = JSONData["files"].size();
 
 		for (unsigned int i = 0; i < JSONData["files"].size() || offset < this->DepotSize; i++) {
-			//wstring filePathStr = this->UnpackedDir + L"\\" + to_wstring(fileName);
+			//
 			//std::replace(filePathStr.begin(), filePathStr.end(), L'/', L'\\');
-			//fs::path filePath = fs::path(filePathStr).parent_path();
+
 
 
 			unsigned int fileSize = *(unsigned int*)(this->Depot + offset);
@@ -404,7 +404,9 @@ BuildFile::UnpackResult UpdateManager::BuildFile::UnpackDepot(int* progress, int
 			}
 
 			string fileName = JSONData["files"][(this->FileType == DFileType::Encrypted ? i - 1 : i)]["name"].asString();
-			fs::create_directories(this->UnpackedDir);
+			wstring filePathStr = this->UnpackedDir + L"\\" + to_wstring(fileName);
+			fs::path filePath = fs::path(filePathStr).parent_path();
+			fs::create_directories(filePath);
 			if (this->FileType == DFileType::Default)
 				WriteToFile(this->UnpackedDir + L"\\" + to_wstring(fileName), this->Depot + offset, fileSize);
 			else
