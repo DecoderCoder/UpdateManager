@@ -286,11 +286,11 @@ BuildFile::UnpackResult UpdateManager::BuildFile::CheckDepot(bool force)
 		if (loadResult != BuildFile::LoadResult::Success)
 		{
 			this->lastCheckResult = BuildFile::UnpackResult::LoadError;
-			return BuildFile::UnpackResult::LoadError;
+			return this->lastCheckResult;
 		}
 	}
 	else {
-		if (this->FileType == DFileType::Encrypted)
+		if (this->FileType == DFileType::Encrypted || this->FileType == DFileType::EncryptedFile)
 		{
 			Json::Value JSONData;
 			unsigned int JSONLength = *(unsigned int*)(this->Depot + sizeof(BuildFile::DFileType));
@@ -301,7 +301,17 @@ BuildFile::UnpackResult UpdateManager::BuildFile::CheckDepot(bool force)
 				reader.parse(json, JSONData);
 			}
 
-			this->headerSha = JSONData["header-sha"].asString();
+			this->sha = JSONData["header-sha"].asString();
+			if (this->sha == "")
+				this->sha = JSONData["file-sha"].asString();
+			if (this->sha == "")
+				this->sha = JSONData["sha"].asString();
+
+			if (this->sha == "")
+			{
+				this->lastUnpackResult == UnpackResult::UnknownError;
+				return this->lastUnpackResult;
+			}
 			string keyId = JSONData["key-id"].asString();
 			KeyManager::Key key = this->Build->App->Host->GetKey(keyId);
 			if (!key.IsValid())
@@ -316,10 +326,10 @@ BuildFile::UnpackResult UpdateManager::BuildFile::CheckDepot(bool force)
 	if (fs::exists(this->UnpackedDir))
 	{
 		this->lastCheckResult = BuildFile::UnpackResult::Success;
-		return BuildFile::UnpackResult::Success;
+		return this->lastCheckResult;
 	}
 	this->lastCheckResult = BuildFile::UnpackResult::NotUnpackedYet;
-	return BuildFile::UnpackResult::NotUnpackedYet;
+	return this->lastCheckResult;
 }
 
 BuildFile::UnpackResult UpdateManager::BuildFile::UnpackDepot(int* progress, int* progressMax, bool force)
@@ -339,6 +349,12 @@ BuildFile::UnpackResult UpdateManager::BuildFile::UnpackDepot(int* progress, int
 		this->lastUnpackResult = this->lastCheckResult;
 		return this->lastUnpackResult;
 	}
+	//else {
+	//	if (CheckResult != UnpackResult::KeyNotFound) {
+	//		this->lastUnpackResult = this->lastCheckResult;
+	//		return this->lastUnpackResult;
+	//	}
+	//}
 
 	Json::Value JSONData;
 	unsigned int JSONLength = *(unsigned int*)(this->Depot + sizeof(BuildFile::DFileType));
@@ -351,41 +367,57 @@ BuildFile::UnpackResult UpdateManager::BuildFile::UnpackDepot(int* progress, int
 
 	// Reading files
 	int offset = sizeof(BuildFile::DFileType) + sizeof(unsigned int) + JSONLength;
-	if (progress != nullptr)
-		*progress = 0;
-	if (progressMax)
-		*progressMax = JSONData["files"].size();
 
-
-	for (unsigned int i = 0; i < JSONData["files"].size() || offset < this->DepotSize; i++) {
-		//wstring filePathStr = this->UnpackedDir + L"\\" + to_wstring(fileName);
-		//std::replace(filePathStr.begin(), filePathStr.end(), L'/', L'\\');
-		//fs::path filePath = fs::path(filePathStr).parent_path();
-
-
+	if (this->FileType == DFileType::EncryptedFile) {
+		KeyManager::Key key = this->Build->App->Host->GetKey(JSONData["key-id"].asString());
+		if (!key.IsValid())
+		{
+			this->lastUnpackResult == UnpackResult::KeyNotFound;
+			return this->lastUnpackResult;
+		}
 		unsigned int fileSize = *(unsigned int*)(this->Depot + offset);
 		offset += sizeof(unsigned int);
-		if (this->FileType == DFileType::Encrypted && i == 0) {
-			auto jsondata = DecryptAES(string(this->Depot + offset, fileSize), this->Key.Key, GetIV(this->headerSha, this->Key.Name));
-			JSONData = GetJSONFromString(jsondata).value();
-			offset += fileSize;
-			continue;
-		}
-
-		string fileName = JSONData["files"][(this->FileType == DFileType::Encrypted ? i - 1 : i)]["name"].asString();
+		string decryptedData = DecryptAES(string(this->Depot + offset, fileSize), key.Key, GetIV(JSONData["file-sha"].asString(), key.Name));
 		fs::create_directories(this->UnpackedDir);
-		if (this->FileType == DFileType::Default)
-			WriteToFile(this->UnpackedDir + L"\\" + to_wstring(fileName), this->Depot + offset, fileSize);
-		else
-		{
-			string decryptedData = DecryptAES(string(this->Depot + offset, fileSize), this->Key.Key, GetIV(JSONData["files"][(this->FileType == DFileType::Encrypted ? i - 1 : i)]["sha"].asString(), this->Key.Name));
-			WriteToFile(this->UnpackedDir + L"\\" + to_wstring(fileName), decryptedData.data(), decryptedData.size());
-		}
-
-		offset += fileSize;
-		Log("Unpacked file " + fileName + ", Size: " + to_string(fileSize));
+		WriteToFile(this->UnpackedDir + L"\\" + fs::path(this->Name).filename().wstring(), decryptedData.data(), decryptedData.size());
+	}
+	else
+	{
 		if (progress != nullptr)
-			(*progress)++;
+			*progress = 0;
+		if (progressMax)
+			*progressMax = JSONData["files"].size();
+
+		for (unsigned int i = 0; i < JSONData["files"].size() || offset < this->DepotSize; i++) {
+			//wstring filePathStr = this->UnpackedDir + L"\\" + to_wstring(fileName);
+			//std::replace(filePathStr.begin(), filePathStr.end(), L'/', L'\\');
+			//fs::path filePath = fs::path(filePathStr).parent_path();
+
+
+			unsigned int fileSize = *(unsigned int*)(this->Depot + offset);
+			offset += sizeof(unsigned int);
+			if (this->FileType == DFileType::Encrypted && i == 0) {
+				auto jsondata = DecryptAES(string(this->Depot + offset, fileSize), this->Key.Key, GetIV(this->sha, this->Key.Name));
+				JSONData = GetJSONFromString(jsondata).value();
+				offset += fileSize;
+				continue;
+			}
+
+			string fileName = JSONData["files"][(this->FileType == DFileType::Encrypted ? i - 1 : i)]["name"].asString();
+			fs::create_directories(this->UnpackedDir);
+			if (this->FileType == DFileType::Default)
+				WriteToFile(this->UnpackedDir + L"\\" + to_wstring(fileName), this->Depot + offset, fileSize);
+			else
+			{
+				string decryptedData = DecryptAES(string(this->Depot + offset, fileSize), this->Key.Key, GetIV(JSONData["files"][(this->FileType == DFileType::Encrypted ? i - 1 : i)]["sha"].asString(), this->Key.Name));
+				WriteToFile(this->UnpackedDir + L"\\" + to_wstring(fileName), decryptedData.data(), decryptedData.size());
+			}
+
+			offset += fileSize;
+			Log("Unpacked file " + fileName + ", Size: " + to_string(fileSize));
+			if (progress != nullptr)
+				(*progress)++;
+		}
 	}
 
 	this->lastUnpackResult = UnpackResult::Success;

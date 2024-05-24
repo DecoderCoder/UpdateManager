@@ -61,20 +61,21 @@ void ViewWindow::ParseFiles(wstring path, DirectoryNode* parentNode) {
 			else
 				loadedFile->FileType = LoadedFileType::Binary;
 
-			loadedFile->Text = ReadFromFile(loadedFile->FullPath);
 
-			{
-				loadedFile->Binary = ToHex(loadedFile->Text.data(), loadedFile->Text.size(), false);
+			ReadBinaryFile(loadedFile->FullPath, &loadedFile->Binary, loadedFile->BinarySize);
+			loadedFile->Text = string(loadedFile->Binary, loadedFile->BinarySize);
 
-				//	size_t size = 0;
-				//	char* buff = nullptr;
-				//	ReadBinaryFile(loadedFile->FullPath, &buff, size);
-				//	loadedFile->Text = string(buff, size);
-			}
+			if (*(BuildFile::DFileType*)loadedFile->Text.data() == BuildFile::DFileType::Encrypted || *(BuildFile::DFileType*)loadedFile->Text.data() == BuildFile::DFileType::EncryptedFile)
+				loadedFile->FileType = LoadedFileType::Encrypted;
 
-			if (loadedFile->FileType == LoadedFileType::Image) {
-				DirectX::LoadTextureFromFile(loadedFile->FullPath, loadedFile->Image);
-			}
+			loadedFile->BinaryHex = ToHex(loadedFile->Binary, loadedFile->BinarySize, true);
+
+
+			auto a = *(int*)loadedFile->Text.data() & (int)BuildFile::DFileType::Encrypted | (int)BuildFile::DFileType::EncryptedFile;
+
+			//if (loadedFile->FileType == LoadedFileType::Image) {
+			DirectX::LoadTextureFromFile(loadedFile->FullPath, loadedFile->Image);
+			//}
 
 			newNode->LoadedFile = loadedFile;
 
@@ -83,6 +84,38 @@ void ViewWindow::ParseFiles(wstring path, DirectoryNode* parentNode) {
 				selectedFile = parentNode->Children.at(parentNode->Children.size() - 1);
 		}
 
+	}
+}
+
+ViewWindow::ViewWindow(wstring buildFilePath, UpdateManager::Build* build) : Window()
+{
+	/*BuildFile newBuildFile;
+	newBuildFile.Build = newBuild;
+	newBuildFile.Name = d["name"].asString();
+	newBuildFile.Url = d["url"].asString();
+	newBuildFile.FullPath = buildFolder + to_wstring(newBuild->Id) + L"\\depots\\" + to_wstring(newBuildFile.Name);
+	newBuildFile.UnpackedDir = buildFolder + to_wstring(newBuild->Id) + L"\\unpacked\\" + to_wstring(newBuildFile.Name);
+	newBuildFile.Downloaded = fs::exists(newBuildFile.FullPath);
+	newBuild->Files.push_back(newBuildFile);*/
+
+	fs::path fileName = fs::path(buildFilePath).filename();
+
+	BuildFile* bFile = new BuildFile();
+	bFile->Build = build;
+	bFile->Name = fileName.string();
+	bFile->Url = "";
+	bFile->FullPath = buildFilePath;
+	bFile->UnpackedDir = UpdateManager::GetExecutableFolder().wstring() + L"\\updates\\" + to_wstring(build->App->Host->Uri) + L"\\" + to_wstring(build->App->Id) + L"\\" + to_wstring(build->Id) + L"\\unpacked\\" + to_wstring(GetTickCount()) + L"_" + to_wstring(bFile->Name);
+	bFile->Downloaded = true;
+	this->createdByFile = true;
+
+
+	if (bFile->UnpackDepot() == UpdateManager::BuildFile::UnpackResult::Success) {
+		this->buildFile = bFile;
+		this->windowName = "View [" + this->buildFile->Name + "]";
+		parsingFiles = true;
+		ParseFiles(this->buildFile->UnpackedDir, &depotFiles);
+		parsingFiles = false;
 	}
 }
 
@@ -99,6 +132,9 @@ void ViewWindow::Close()
 {
 	this->FreeNodes(&this->depotFiles);
 	this->buildFile->UnloadDepot();
+	if (this->createdByFile) {
+		delete(this->buildFile);
+	}
 	Window::Close();
 }
 
@@ -146,14 +182,17 @@ void ViewWindow::FreeNodes(DirectoryNode* node)
 		node->LoadedFile->Text.clear();
 		node->LoadedFile->Text.shrink_to_fit();
 
-		node->LoadedFile->Binary.clear();
-		node->LoadedFile->Binary.shrink_to_fit();
+		node->LoadedFile->BinaryHex.clear();
+		node->LoadedFile->BinaryHex.shrink_to_fit();
+		delete(node->LoadedFile->Binary);
 		delete(node->LoadedFile);
 	}
 }
 
 bool ViewWindow::Render()
 {
+	if (!buildFile)
+		return false;
 	ImGuiID filesDock = ImGui::GetID(("##" + buildFile->Name + "_files").c_str());
 	if (this->dockId != -1)
 		ImGui::SetNextWindowDockID(this->dockId, ImGuiCond_Once);
@@ -218,54 +257,65 @@ bool ViewWindow::Render()
 
 	ImGui::NextColumn();
 	if (selectedFile && selectedFile->LoadedFile) {
-		ImGui::DockSpace(filesDock, ImVec2(0, 0), 0, &viewClass);
-
-		// Text file
-		ImGui::SetNextWindowDockID(filesDock, ImGuiCond_Once);
-		ImGui::SetNextWindowClass(&viewClass);
-		if (selectedFile->LoadedFile->FileType == LoadedFileType::Text && IsSelectedChanged()) {
-			ImGui::SetNextWindowFocus();
+		if (selectedFile->LoadedFile->FileType == LoadedFileType::Encrypted) {
+			auto prevCursor = ImGui::GetCursorPos();
+			ImGui::SetCursorPos(ImVec2(ImGui::GetContentRegionAvail().x * 0.5f - 75 + ImGui::GetCursorPos().x, ImGui::GetContentRegionAvail().y * 0.5f - 20));
+			if (ImGui::Button("Unpack packed file", ImVec2(150, 40))) {
+				ViewWindow* packedFile = new ViewWindow(selectedFile->FullPath, this->buildFile->Build);
+				packedFile->Show();
+			}
+			ImGui::SetCursorPos(prevCursor);
 		}
-		ImGui::Begin(("Text##textTab_" + buildFile->Name).c_str());
+		else {
+			ImGui::DockSpace(filesDock, ImVec2(0, 0), 0, &viewClass);
 
-		ImGui::InputTextMultiline(("##text_" + buildFile->Name).c_str(), (char*)selectedFile->LoadedFile->Text.c_str(), selectedFile->LoadedFile->Text.size(), ImVec2(-1, -1), ImGuiInputTextFlags_ReadOnly);
-		ImGui::End();
+			// Text file
+			ImGui::SetNextWindowDockID(filesDock, ImGuiCond_Once);
+			ImGui::SetNextWindowClass(&viewClass);
+			if (selectedFile->LoadedFile->FileType == LoadedFileType::Text && IsSelectedChanged()) {
+				ImGui::SetNextWindowFocus();
+			}
+			ImGui::Begin(("Text##textTab_" + buildFile->Name).c_str());
 
-		// Image file
-		ImGui::SetNextWindowDockID(filesDock, ImGuiCond_Once);
-		ImGui::SetNextWindowClass(&viewClass);
-		if (selectedFile->LoadedFile->FileType == LoadedFileType::Image && IsSelectedChanged()) {
-			ImGui::SetNextWindowFocus();
+			ImGui::InputTextMultiline(("##text_" + buildFile->Name).c_str(), (char*)selectedFile->LoadedFile->Text.c_str(), selectedFile->LoadedFile->Text.size(), ImVec2(-1, -1), ImGuiInputTextFlags_ReadOnly);
+			ImGui::End();
+
+			// Image file
+			ImGui::SetNextWindowDockID(filesDock, ImGuiCond_Once);
+			ImGui::SetNextWindowClass(&viewClass);
+			if (selectedFile->LoadedFile->FileType == LoadedFileType::Image && IsSelectedChanged()) {
+				ImGui::SetNextWindowFocus();
+			}
+			ImGui::Begin(("Image##image_" + buildFile->Name).c_str());
+			if (selectedFile->LoadedFile->Image && DirectX::LoadedImages.find(selectedFile->LoadedFile->Image) != DirectX::LoadedImages.end()) {
+				DirectX::LoadedImage info = DirectX::LoadedImages[selectedFile->LoadedFile->Image]; // there always will be info about image
+				float aspect = (float)info.Width / (float)max(info.Height, 1);
+				ImGui::Image(selectedFile->LoadedFile->Image, ImVec2(ImGui::GetContentRegionAvail().x, ImGui::GetContentRegionAvail().x / aspect));
+			}
+			ImGui::End();
+
+			// Binary file
+			ImGui::SetNextWindowDockID(filesDock, ImGuiCond_Once);
+			ImGui::SetNextWindowClass(&viewClass);
+			if (selectedFile->LoadedFile->FileType == LoadedFileType::Binary && IsSelectedChanged()) {
+				ImGui::SetNextWindowFocus();
+			}
+			ImGui::Begin(("Binary##binary_" + buildFile->Name).c_str());
+			ImGui::InputTextMultiline(("##binary_" + buildFile->Name).c_str(), (char*)selectedFile->LoadedFile->BinaryHex.c_str(), selectedFile->LoadedFile->BinaryHex.size(), ImVec2(-1, ImGui::GetContentRegionAvail().y - 30), ImGuiInputTextFlags_ReadOnly);
+			if (ImGui::InputInt("Current row", &this->currentBinaryRow)) {
+				if (this->currentBinaryRow < 0)
+					this->currentBinaryRow = 0;
+
+				ImGuiContext& g = *GImGui;
+				const char* child_window_name = NULL;
+				ImFormatStringToTempBuffer(&child_window_name, NULL, "%s/%s_%08X", g.CurrentWindow->Name, ("##binary_" + buildFile->Name).c_str(), ImGui::GetID(("##binary_" + buildFile->Name).c_str()));
+				ImGuiWindow* child_window = ImGui::FindWindowByName(child_window_name);
+				ImGui::SetScrollY(child_window, this->currentBinaryRow * ImGui::CalcTextSize("a").y + 3);
+
+			}
+
+			ImGui::End();
 		}
-		ImGui::Begin(("Image##image_" + buildFile->Name).c_str());
-		if (selectedFile->LoadedFile->Image && DirectX::LoadedImages.find(selectedFile->LoadedFile->Image) != DirectX::LoadedImages.end()) {
-			DirectX::LoadedImage info = DirectX::LoadedImages[selectedFile->LoadedFile->Image]; // there always will be info about image
-			float aspect = (float)info.Width / (float)max(info.Height, 1);
-			ImGui::Image(selectedFile->LoadedFile->Image, ImVec2(ImGui::GetContentRegionAvail().x, ImGui::GetContentRegionAvail().x / aspect));
-		}
-		ImGui::End();
-
-		// Binary file
-		ImGui::SetNextWindowDockID(filesDock, ImGuiCond_Once);
-		ImGui::SetNextWindowClass(&viewClass);
-		if (selectedFile->LoadedFile->FileType == LoadedFileType::Binary && IsSelectedChanged()) {
-			ImGui::SetNextWindowFocus();
-		}
-		ImGui::Begin(("Binary##binary_" + buildFile->Name).c_str());
-		ImGui::InputTextMultiline(("##binary_" + buildFile->Name).c_str(), (char*)selectedFile->LoadedFile->Binary.c_str(), selectedFile->LoadedFile->Binary.size(), ImVec2(-1, ImGui::GetContentRegionAvail().y - 30), ImGuiInputTextFlags_ReadOnly);
-		if (ImGui::InputInt("Current row", &this->currentBinaryRow)) {
-			if (this->currentBinaryRow < 0)
-				this->currentBinaryRow = 0;
-
-			ImGuiContext& g = *GImGui;
-			const char* child_window_name = NULL;
-			ImFormatStringToTempBuffer(&child_window_name, NULL, "%s/%s_%08X", g.CurrentWindow->Name, ("##binary_" + buildFile->Name).c_str(), ImGui::GetID(("##binary_" + buildFile->Name).c_str()));
-			ImGuiWindow* child_window = ImGui::FindWindowByName(child_window_name);
-			ImGui::SetScrollY(child_window, this->currentBinaryRow * ImGui::CalcTextSize("a").y + 3);
-
-		}
-
-		ImGui::End();
 	}
 	ImGui::Columns(1);
 

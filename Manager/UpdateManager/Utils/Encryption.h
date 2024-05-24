@@ -3,7 +3,7 @@
 #include <openssl/evp.h>
 #include <openssl/rand.h>
 #include "openssl/engine.h"
-#include "Utils/Base64.hpp"
+#include "Base64.hpp"
 
 
 static string GetIV(string sha, string keyName) {

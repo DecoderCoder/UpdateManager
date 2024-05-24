@@ -88,7 +88,7 @@ namespace UpdateManager {
 			Unknown = 0
 		};
 
-		string headerSha;
+		string sha;
 		KeyManager::Key Key;
 
 		string DFileTypeToString(BuildFile::DFileType type);

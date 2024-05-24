@@ -6,15 +6,18 @@ class ViewWindow : public Window {
 	enum class LoadedFileType {
 		Image,
 		Text,
-		Binary
+		Binary,
+		Encrypted
 	};
 
 	struct LoadedFile {
 		std::wstring FullPath;
 		LoadedFileType FileType = LoadedFileType::Binary;
 		ID3D11ShaderResourceView* Image = nullptr;
+		char* Binary;
+		size_t BinarySize;
 		string Text = "";
-		string Binary = "";
+		string BinaryHex = "";
 	};
 
 	struct DirectoryNode
@@ -40,7 +43,9 @@ class ViewWindow : public Window {
 
 	BuildFile* buildFile = nullptr;
 	ImGuiID dockId = -1;
+	bool createdByFile = false;
 public:
+	ViewWindow(wstring buildFilePath, UpdateManager::Build* build);
 	ViewWindow(BuildFile* b);
 	virtual void Close();
 	virtual void SetDock(ImGuiID id);
