@@ -63,12 +63,15 @@ void ViewWindow::ParseFiles(wstring path, DirectoryNode* parentNode) {
 
 
 			ReadBinaryFile(loadedFile->FullPath, &loadedFile->Binary, loadedFile->BinarySize);
-			loadedFile->Text = string(loadedFile->Binary, loadedFile->BinarySize);
+
 
 			if (*(BuildFile::DFileType*)loadedFile->Text.data() == BuildFile::DFileType::Encrypted || *(BuildFile::DFileType*)loadedFile->Text.data() == BuildFile::DFileType::EncryptedFile)
 				loadedFile->FileType = LoadedFileType::Encrypted;
+			//if (loadedFile->BinarySize < 1 * 1024 * 1024) {
+				loadedFile->Text = string(loadedFile->Binary, loadedFile->BinarySize);
+				loadedFile->BinaryHex = ToHex(loadedFile->Binary, loadedFile->BinarySize, true);
+			//}
 
-			loadedFile->BinaryHex = ToHex(loadedFile->Binary, loadedFile->BinarySize, true);
 
 
 			auto a = *(int*)loadedFile->Text.data() & (int)BuildFile::DFileType::Encrypted | (int)BuildFile::DFileType::EncryptedFile;
@@ -203,6 +206,7 @@ bool ViewWindow::Render()
 	viewClass.ClassId = ImGui::GetID(("viewwindow_" + buildFile->Name).c_str());
 	viewClass.DockingAllowUnclassed = false;
 
+	bool disabledStarted = false; // to prevent stack error when Parsing finish earlier than render
 	if (parsingFiles) // prevent from closing when loading to exclude exception
 		ImGui::Begin(("View [" + buildFile->Name + "]").c_str(), nullptr, ImGuiWindowFlags_MenuBar);
 	else
@@ -210,6 +214,7 @@ bool ViewWindow::Render()
 	if (parsingFiles) {
 		ImGui::ProgressBar(ImGui::GetTime() * -0.2f);
 		ImGui::BeginDisabled();
+		disabledStarted = true;
 	}
 
 	if (!Window::Render()) {
@@ -327,7 +332,7 @@ bool ViewWindow::Render()
 
 	//	ImGui::EndPopup();
 	//}
-	if (parsingFiles)
+	if (parsingFiles || disabledStarted)
 		ImGui::EndDisabled();
 	ImGui::End();
 	return true;

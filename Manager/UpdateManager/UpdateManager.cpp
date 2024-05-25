@@ -389,11 +389,6 @@ BuildFile::UnpackResult UpdateManager::BuildFile::UnpackDepot(int* progress, int
 			*progressMax = JSONData["files"].size();
 
 		for (unsigned int i = 0; i < JSONData["files"].size() || offset < this->DepotSize; i++) {
-			//
-			//std::replace(filePathStr.begin(), filePathStr.end(), L'/', L'\\');
-
-
-
 			unsigned int fileSize = *(unsigned int*)(this->Depot + offset);
 			offset += sizeof(unsigned int);
 			if (this->FileType == DFileType::Encrypted && i == 0) {

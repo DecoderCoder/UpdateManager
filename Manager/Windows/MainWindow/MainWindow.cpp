@@ -19,9 +19,13 @@ KeyManagerWindow* keyManagerWindow;
 
 bool MainWindow::Render()
 {
+	auto style = ImGui::GetStyle();
+	style.WindowMinSize = ImVec2(900, 600);
+	style.WindowTitleAlign = ImVec2(0.5f, 0.5f);
+	style.FramePadding.y = 10;
+
 	bool disabled = false;
 
-	ImGui::GetStyle().WindowTitleAlign = ImVec2(0.5f, 0.5f);
 	ImGui::Begin(_PROJECTNAME, &this->Opened, ImGuiWindowFlags_MenuBar);
 	dockId = ImGui::GetID("viewwindows_dock");
 	for (auto obj : UnpackingProgresses) {
@@ -334,7 +338,7 @@ bool MainWindow::Render()
 
 	if (selectedBuild == -1)
 		ImGui::BeginDisabled();
-	ImGui::Button("Download all", ImVec2(ImGui::GetContentRegionAvail().x / 2 - 10, 0));
+	ImGui::Button("Download all", ImVec2(ImGui::GetContentRegionAvail().x / 2 - style.FramePadding.x, 0));
 	if (selectedBuild == -1)
 		ImGui::EndDisabled();
 	ImGui::SameLine();
