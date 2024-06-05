@@ -1,7 +1,12 @@
 #include "MainWindow.h"
 
 char searchBuffer[256] = { 0 };
-char inputBuffer[256] = { 0 };
+
+char inputHostNameBuffer[256] = { 0 };
+char inputAdminLogin[256] = { 0 };
+char inputAdminPassword[256] = { 0 };
+char inputAppName[256] = { 0 };
+string comboBoxAppAccessGroup;
 
 int selectedHost = -1;
 int selectedApp = -1;
@@ -10,12 +15,70 @@ std::vector<int> selectedFile;
 
 int DownloadingCount;
 std::map<UpdateManager::BuildFile*, std::pair<int, int>> UnpackingProgresses; // Build > (Progress, MaxProgress)
-
 std::vector<UpdateManager::BuildFile*> openingBuilds;
-
 ImGuiID dockId;
 
 KeyManagerWindow* keyManagerWindow;
+
+bool modalHostAdditional = false;
+bool modalHostIsAdmin = false;
+
+void ResetAddHost() {
+	modalHostIsAdmin = false;
+	memset(inputHostNameBuffer, 0, sizeof(inputHostNameBuffer));
+	memset(inputAdminLogin, 0, sizeof(inputAdminLogin));
+	memset(inputAdminPassword, 0, sizeof(inputAdminPassword));
+}
+
+void ResetAddApp() {
+	memset(inputAppName, 0, sizeof(inputAppName));
+	comboBoxAppAccessGroup = "";
+}
+
+const int dotsDelay = 300;
+
+std::pair<char, int> appsDots = make_pair(0, 0);
+std::pair<char, int> buildsDots = make_pair(0, 0);
+
+string GetAppsText() {
+	if (selectedHost != -1 && UpdateManager::GetHosts()->at(selectedHost).WaitingGetApps) {
+		if (GetTickCount() > appsDots.second) { // appsLastDot
+			if (appsDots.first == 3) // appsDotsCount
+				appsDots.first = 1; // appsDotsCount
+			else
+				appsDots.first++; // appsDotsCount
+			appsDots.second = GetTickCount() + dotsDelay; // appsLastDot
+		}
+	}
+	else {
+		appsDots.first = 0; // appsDotsCount
+		appsDots.second = 0; // appsLastDot
+	}
+	string text = "Apps";
+	for (int i = 0; i < appsDots.first; i++) // appsDotsCount
+		text.append(".");
+	return text;
+}
+
+string GetBuildsText() {
+	if (selectedApp != -1 && UpdateManager::GetHosts()->at(selectedHost).GetApps()->at(selectedApp).WaitingGetBuilds) {
+		if (GetTickCount() > buildsDots.second) { // buildsLastDot
+			if (buildsDots.first == 3) // buildsDotsCount
+				buildsDots.first = 1; // buildsDotsCount
+			else
+				buildsDots.first++; // buildsDotsCount
+			buildsDots.second = GetTickCount() + dotsDelay; // buildsLastDot
+		}
+	}
+	else {
+		buildsDots.first = 0; // buildsDotsCount
+		buildsDots.second = 0; // buildsLastDot
+	}
+	string text = "Builds";
+	for (int i = 0; i < buildsDots.first; i++) // buildsDotsCount
+		text.append(".");
+	return text;
+}
 
 bool MainWindow::Render()
 {
@@ -70,6 +133,10 @@ bool MainWindow::Render()
 		ImGui::EndMenuBar();
 	}
 
+	Host* pSelectedHost = nullptr;
+	App* pSelectedApp = nullptr;
+	Build* pSelectedBuild = nullptr;
+
 	ImGui::Columns(3);
 	ImGui::Text("Hosts");
 	ImGui::PushItemWidth(-1);
@@ -91,17 +158,20 @@ bool MainWindow::Render()
 	ImGui::SameLine();
 	// ImGui::SameLine(ImGui::GetContentRegionAvail().x - 30 + ImGui::GetStyle().FramePadding.x + 2);
 	if (ImGui::Button("-##host", ImVec2(30, 0))) {
-		ImGui::OpenPopup("Remove Host");
+		ImGui::OpenPopup("Remove Host##host");
 	}
 
 	ImGui::NextColumn();
-	ImGui::Text("Apps");
+	ImGui::Text(GetAppsText().c_str());
+	disabled = selectedHost == -1 || UpdateManager::GetHosts()->at(selectedHost).WaitingGetApps;
+	if (disabled)
+		ImGui::BeginDisabled();
 	ImGui::PushItemWidth(-1);
 	if (ImGui::BeginListBox("##app")) {
 		if (selectedHost > -1) {
-			auto versions = UpdateManager::GetHosts()->at(selectedHost).GetVersions();
-			for (int i = 0; i < versions->size(); i++) {
-				if (ImGui::Selectable(versions->at(i).Id.c_str(), i == selectedApp)) {
+			auto apps = UpdateManager::GetHosts()->at(selectedHost).GetApps();
+			for (int i = 0; i < apps->size(); i++) {
+				if (ImGui::Selectable(apps->at(i).Id.c_str(), i == selectedApp)) {
 					selectedApp = i;
 					selectedBuild = -1;
 					selectedFile.clear();
@@ -111,23 +181,32 @@ bool MainWindow::Render()
 
 		ImGui::EndListBox();
 	}
-	disabled = selectedHost == -1 || !UpdateManager::GetHosts()->at(selectedHost).IsAdmin;
-	if (disabled)
-	{
-		ImGui::BeginDisabled();
-	}
 
-	ImGui::Button("+", ImVec2(30, 0));
-	if (disabled)
-	{
+	//disabled = selectedHost == -1;// || !UpdateManager::GetHosts()->at(selectedHost).IsAdmin;
+	if (disabled && selectedHost != -1 && UpdateManager::GetHosts()->at(selectedHost).IsAdmin)
 		ImGui::EndDisabled();
+	if (ImGui::Button("+", ImVec2(30, 0))) {
+		ImGui::OpenPopup("Add App##app");
 	}
+	if (disabled && selectedHost != -1 && UpdateManager::GetHosts()->at(selectedHost).IsAdmin)
+		ImGui::BeginDisabled();
+	ImGui::SameLine();
+	if (ImGui::Button("-", ImVec2(30, 0))) {
+		ImGui::OpenPopup("Remove App##app");
+	}
+	if (disabled)
+		ImGui::EndDisabled();
+
+
 	ImGui::NextColumn();
-	ImGui::Text("Builds");
+	disabled = selectedApp == -1 || UpdateManager::GetHosts()->at(selectedHost).GetApps()->at(selectedApp).WaitingGetBuilds;
+	if (disabled)
+		ImGui::BeginDisabled();
+	ImGui::Text(GetBuildsText().c_str());
 	ImGui::PushItemWidth(-1);
 	if (ImGui::BeginListBox("##build")) {
 		if (selectedApp > -1) {
-			auto builds = UpdateManager::GetHosts()->at(selectedHost).GetVersions()->at(selectedApp).GetBuilds();
+			auto builds = UpdateManager::GetHosts()->at(selectedHost).GetApps()->at(selectedApp).GetBuilds();
 			for (int i = 0; i < builds->size(); i++) {
 				\
 					UpdateManager::Build* build = &builds->at(i);
@@ -159,8 +238,10 @@ bool MainWindow::Render()
 		}
 		ImGui::EndListBox();
 	}
+	if (disabled)
+		ImGui::EndDisabled();
 
-	disabled = selectedApp == -1 || !UpdateManager::GetHosts()->at(selectedHost).IsAdmin;
+	disabled = selectedApp == -1 || UpdateManager::GetHosts()->at(selectedHost).GetApps()->at(selectedApp).WaitingGetBuilds || !UpdateManager::GetHosts()->at(selectedHost).IsAdmin;
 	if (disabled)
 	{
 		ImGui::BeginDisabled();
@@ -189,7 +270,7 @@ bool MainWindow::Render()
 	ImGui::PushItemWidth(-1);
 	if (ImGui::BeginListBox("##files", ImVec2(0, ImGui::GetContentRegionAvail().y))) {
 		if (selectedBuild > -1) {
-			auto build = &UpdateManager::GetHosts()->at(selectedHost).GetVersions()->at(selectedApp).GetBuilds()->at(selectedBuild);
+			auto build = &UpdateManager::GetHosts()->at(selectedHost).GetApps()->at(selectedApp).GetBuilds()->at(selectedBuild);
 			auto files = build->GetFiles();
 			for (int i = 0; i < files->size(); i++) {
 				BuildFile* file = &files->at(i);
@@ -327,7 +408,6 @@ bool MainWindow::Render()
 					ImGui::EndDisabled();
 				}
 			}
-
 		}
 
 		ImGui::EndListBox();
@@ -348,8 +428,56 @@ bool MainWindow::Render()
 	//ImGuiWindowClass windowClass;
 	//windowClass.ViewportFlagsOverrideSet = ImGuiViewportFlags_TopMost;
 	//ImGui::SetNextWindowClass(&windowClass);
+	if (ImGui::BeginPopupModal("Add App##app", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) {
+		ImGui::Text(" App Name");
+		ImGui::InputText("##appname", inputAppName, sizeof(inputAppName));
+
+		if (UpdateManager::GetHosts()->at(selectedHost).IsAdmin) {
+			ImGui::Text("Access Group");
+			if (ImGui::BeginCombo("##addappaccessgroup", comboBoxAppAccessGroup.c_str())) {
+				if (ImGui::Selectable("##addappemptyag", comboBoxAppAccessGroup == "")) {
+					comboBoxAppAccessGroup = "";
+				}
+				for (auto& ag : UpdateManager::GetHosts()->at(selectedHost).accessGroup) {
+					if (ImGui::Selectable(ag.first.c_str(), ag.first == comboBoxAppAccessGroup)) {
+						comboBoxAppAccessGroup = ag.first;
+					}
+				}
+				ImGui::EndCombo();
+			}
+		}
+
+		if (ImGui::Button("Add", ImVec2(ImGui::GetContentRegionAvail().x / 2 - ImGui::GetStyle().ItemInnerSpacing.x, 0))) {
+			UpdateManager::GetHosts()->at(selectedHost).AddApp(string(inputAppName), comboBoxAppAccessGroup);
+			ResetAddApp();
+			ImGui::CloseCurrentPopup();
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("Cancel", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
+			ResetAddApp();
+			ImGui::CloseCurrentPopup();
+		}
+		ImGui::EndPopup();
+	}
+	if (ImGui::BeginPopupModal("Remove App##app", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) {
+		ImGui::Text(" Do you want to remove app?");
+		if (ImGui::Button("Remove", ImVec2(100, 0))) {
+			UpdateManager::GetHosts()->at(selectedHost).RemoveApp(UpdateManager::GetHosts()->at(selectedHost).GetApps()->at(selectedApp).Id);
+			selectedApp = -1;
+			selectedBuild = -1;
+			selectedFile.clear();
+			ImGui::CloseCurrentPopup();
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("Cancel", ImVec2(100, 0))) {
+			ImGui::CloseCurrentPopup();
+		}
+
+		ImGui::EndPopup();
+	}
 	if (ImGui::BeginPopupModal("Add Host", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) {
-		ImGui::InputText("##hostinput", inputBuffer, sizeof(inputBuffer));
+		ImGui::Text(" Host");
+		ImGui::InputText("##hostinput", inputHostNameBuffer, sizeof(inputHostNameBuffer));
 		{
 			auto filesText = "Use only SSL protoctol";
 			auto windowWidth = ImGui::GetContentRegionAvail().x;
@@ -360,16 +488,74 @@ bool MainWindow::Render()
 			ImGui::Spacing();
 			ImGui::Spacing();
 		}
+		ImGui::Checkbox("Show additional options", &modalHostAdditional);
+		if (modalHostAdditional) {
+			ImGui::BeginChild("##additionaloptions", ImVec2(0, 0), ImGuiChildFlags_AlwaysAutoResize | ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_Border, 0);
+			ImGui::Checkbox("Is Admin?", &modalHostIsAdmin);
+			ImGui::Text(" Login");
+			if (!modalHostIsAdmin)
+				ImGui::BeginDisabled();
+			ImGui::SetNextItemWidth(-1);
+			ImGui::InputText("##login", inputAdminLogin, sizeof(inputAdminLogin));
+			if (!modalHostIsAdmin)
+				ImGui::EndDisabled();
+			ImGui::Text(" Password");
+			if (!modalHostIsAdmin)
+				ImGui::BeginDisabled();
+			ImGui::SetNextItemWidth(-1);
+			ImGui::InputText("##password", inputAdminPassword, sizeof(inputAdminPassword), ImGuiInputTextFlags_Password);
+			if (!modalHostIsAdmin)
+				ImGui::EndDisabled();
+
+			ImGui::Text(" OS");
+			ImGui::SetNextItemWidth(-1);
+			if (ImGui::BeginCombo("##os", "Windows")) { // win | osx
+				ImGui::Selectable("Windows", true);
+				ImGui::BeginDisabled();
+				ImGui::Selectable("Mac OS", false);
+				ImGui::EndDisabled();
+				ImGui::EndCombo();
+			}
+			ImGui::Text(" Stage");
+			ImGui::SetNextItemWidth(-1);
+			if (ImGui::BeginCombo("##stage", "Public")) { // public | canary | staging (encrypted)
+				ImGui::Selectable("Public", true);
+				ImGui::BeginDisabled();
+				ImGui::Selectable("Canary", false);
+				ImGui::Selectable("Staging", false);
+				ImGui::EndDisabled();
+				ImGui::EndCombo();
+			}
+			ImGui::EndChild();
+		}
 		if (ImGui::Button("Add", ImVec2(ImGui::GetContentRegionAvail().x / 2 - ImGui::GetStyle().ItemInnerSpacing.x, 0))) {
-			fs::create_directories(UpdateManager::GetExecutableFolder().wstring() + L"\\updates\\" + to_wstring(string(inputBuffer)));
-			UpdateManager::GetHosts(true);
+			UpdateManager::AddHost(string(inputHostNameBuffer), modalHostIsAdmin, string(inputAdminLogin), string(inputAdminPassword));
+			//UpdateManager::GetHosts(true);
 			ImGui::CloseCurrentPopup();
-			memset(inputBuffer, 0, sizeof(inputBuffer));
+			ResetAddHost();
 		}
 		ImGui::SameLine();
 		if (ImGui::Button("Cancel", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
+			ResetAddHost();
 			ImGui::CloseCurrentPopup();
 		}
+		ImGui::EndPopup();
+	}
+	if (ImGui::BeginPopupModal("Remove Host##host", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) {
+		ImGui::Text(" Do you want to remove host?");
+		if (ImGui::Button("Remove", ImVec2(100, 0))) {
+			UpdateManager::RemoveHost(UpdateManager::Hosts[selectedHost].Uri);
+			selectedHost = -1;
+			selectedApp = -1;
+			selectedBuild = -1;
+			selectedFile.clear();
+			ImGui::CloseCurrentPopup();
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("Cancel", ImVec2(100, 0))) {
+			ImGui::CloseCurrentPopup();
+		}
+
 		ImGui::EndPopup();
 	}
 

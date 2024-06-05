@@ -5,11 +5,16 @@
 #include <vector>
 #include <map>
 #include <string>
+#include <functional>
 #include <filesystem>
+#include <future>
+#include <mutex>
 #include "Utils/Logger.h"
 #include "Utils/Utils.h"
 #include "Utils/Encryption.h"
 #include "Utils/jsoncpp/json/json.h"
+#include "Utils/ini/ini.h"
+#include "Utils/base64/base64.h"
 
 using namespace std;
 namespace fs = std::filesystem;
@@ -83,7 +88,6 @@ namespace UpdateManager {
 		enum class DFileType {
 			Default = 0x20170110,
 			Encrypted = 0x20210506,
-		//	Key = 0x20210521,
 			EncryptedFile = 0x20210521,
 			Unknown = 0
 		};
@@ -104,7 +108,7 @@ namespace UpdateManager {
 		size_t DepotSize;
 		bool Downloaded;
 
-		void DownloadDepot();
+		void DownloadDepot(std::function<bool(uint64_t current, uint64_t total)> callback = nullptr);
 		LoadResult LoadDepot(bool force = true);
 		void UnloadDepot();
 		UnpackResult GetFileType();
@@ -131,27 +135,38 @@ namespace UpdateManager {
 
 	class App {
 	public:
+		bool WaitingGetBuilds = false;
+		bool OnServer = false;
 		string Id;
 		Host* Host;
 		vector<Build> Builds;
-
 		vector<Build>* GetBuilds(bool enforce = false);
 	};
 
 	class Host {
+	private:
 	public:
+		bool WaitingGetApps = false;
 		bool IsAdmin = false;
+
+		string Login = "";
+		string Password = "";
+
 		string Uri = "";
 		vector<App> Apps;
 
 		map<string, std::vector<KeyManager::Key>> accessGroup;
 
-		vector<App>* GetVersions(bool enforce = false);
+		void AddApp(string name, string accessGroup);
+		void RemoveApp(string name);
+		vector<App>* GetApps(bool enforce = false);
 		KeyManager::Key GetKey(string name);
 	};
 
 	inline std::vector<Host> Hosts;
 
+	void AddHost(string host, bool isAdmin = false, string login = "", string password = "");
+	void RemoveHost(string name);
 	std::vector<Host>* GetHosts(bool enforce = false);
 
 	fs::path GetExecutableFolder();

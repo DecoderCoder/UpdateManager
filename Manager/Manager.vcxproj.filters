@@ -44,6 +44,9 @@
     <ClCompile Include="Windows\KeyManagerWindow\KeyManagerWindow.cpp">
       <Filter>Windows\KeyManagerWindow</Filter>
     </ClCompile>
+    <ClCompile Include="UpdateManager\Utils\base64\base64.cpp">
+      <Filter>UpdateManager\Utils\base64</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Manager.h" />
@@ -98,6 +101,9 @@
     <ClInclude Include="UpdateManager\Utils\Base64.hpp">
       <Filter>UpdateManager\Utils</Filter>
     </ClInclude>
+    <ClInclude Include="UpdateManager\Utils\base64\base64.h">
+      <Filter>UpdateManager\Utils\base64</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="DirectX">
@@ -132,6 +138,9 @@
     </Filter>
     <Filter Include="Windows\KeyManagerWindow">
       <UniqueIdentifier>{e09eacfb-a069-4d27-a619-74c9c4035294}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="UpdateManager\Utils\base64">
+      <UniqueIdentifier>{67e1c32d-2a17-4bda-9ed8-a32dd42f717d}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
 </Project>

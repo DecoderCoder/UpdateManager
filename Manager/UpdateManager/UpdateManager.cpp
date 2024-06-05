@@ -1,5 +1,10 @@
 #include "UpdateManager.h"
+
 #include "Utils/httplib/httplib.h"
+
+std::map<Host*, std::future<void>> fGetAccessGroups;
+std::map<Host*, std::future<void>> fGetApps;
+std::map<App*, std::future<void>> fGetBuilds;
 
 string UpdateManager::BuildFile::DFileTypeToString(BuildFile::DFileType type)
 {
@@ -17,6 +22,35 @@ string UpdateManager::BuildFile::DFileTypeToString(BuildFile::DFileType type)
 	return "Unknown";
 }
 
+void UpdateManager::AddHost(string host, bool isAdmin, string login, string password) {
+	//for (auto obj : this->) {
+	//	if (obj.Uri == host)
+	//		return;
+	//}
+
+	wstring dir = UpdateManager::GetExecutableFolder().wstring() + L"\\updates\\" + to_wstring(host);
+
+	fs::create_directories(dir);
+	inih::INIReader r;
+	r.InsertEntry<bool>("host", "is_admin", isAdmin);
+	r.InsertEntry<string>("host", "login", login);
+	r.InsertEntry<string>("host", "password", password);
+
+	inih::INIWriter::write(to_string((dir + L"\\settings.ini")), r);
+	GetHosts(true);
+}
+
+void UpdateManager::RemoveHost(string name)
+{
+	if (fs::exists(UpdateManager::GetExecutableFolder().wstring() + L"\\updates\\" + to_wstring(name)))
+		fs::remove_all(UpdateManager::GetExecutableFolder().wstring() + L"\\updates\\" + to_wstring(name));
+	for (int i = 0; i < UpdateManager::Hosts.size(); i++) {
+		if (name == UpdateManager::Hosts[i].Uri) {
+			UpdateManager::Hosts.erase(UpdateManager::Hosts.begin() + i);
+		}
+	}
+}
+
 std::vector<Host>* UpdateManager::GetHosts(bool enforce)
 {
 	if (!enforce && Hosts.size())
@@ -29,9 +63,31 @@ std::vector<Host>* UpdateManager::GetHosts(bool enforce)
 			Host newHost;
 			newHost.IsAdmin = false;
 			newHost.Uri = obj.path().filename().string();
-			ret.push_back(newHost);
+
+			if (fs::exists(obj.path().wstring() + L"\\settings.ini")) {
+				inih::INIReader r{ to_string((obj.path().wstring() + L"\\settings.ini")) };
+				newHost.IsAdmin = r.Get<bool>("host", "is_admin", false);
+				newHost.Login = r.Get<string>("host", "login", "");
+				newHost.Password = r.Get<string>("host", "password", "");
+			}
+			ret.emplace_back(newHost);
 		}
 		Hosts = ret;
+	}
+	for (int i = 0; i < Hosts.size(); i++) {
+		Host* host = &Hosts.at(i);
+		if (host->IsAdmin) {
+			fGetAccessGroups[host] = std::async(std::launch::async, [](Host* host) {
+				httplib::Client cli("https://" + host->Uri);
+				auto res = cli.Get("/pipeline/v2/update/app/access_groups");
+				Json::Value root;
+				Json::Reader reader;
+				reader.parse(res->body, root);
+				for (auto obj : root["accessGroups"]) {
+					host->accessGroup[obj.asString()] = std::vector<KeyManager::Key>();
+				}
+				}, host);
+		}
 	}
 	return &Hosts;
 }
@@ -51,22 +107,98 @@ fs::path UpdateManager::GetExecutableFolder()
 	return fs::path();
 }
 
-vector<App>* UpdateManager::Host::GetVersions(bool enforce)
+void UpdateManager::Host::AddApp(string name, string accessGroup)
 {
-	if (!enforce && this->Apps.size())
-		return &this->Apps;
-	std::vector<App> ret = std::vector<App>();
-	if (fs::exists(GetExecutableFolder().wstring() + L"\\updates\\"))
-	{
-		for (auto obj : fs::directory_iterator(GetExecutableFolder().wstring() + L"\\updates\\" + to_wstring(this->Uri) + L"\\"))
-		{
-			App newVersion;
-			newVersion.Id = obj.path().filename().string();
-			newVersion.Host = this;
-			ret.push_back(newVersion);
-		}
-		this->Apps = ret;
+
+	if (this->IsAdmin) {
+		httplib::Client cli("https://" + this->Uri);
+		string auth = this->Login + ":" + this->Password;
+		httplib::Headers headers = {
+  { "Authorization",  base64_encode((const BYTE*)auth.data(), auth.size())}
+		};
+		auto res = cli.Get("/pipeline/v2/update/app/add/" + name + "/" + accessGroup, headers);
 	}
+	else {
+		auto path = GetExecutableFolder().wstring() + L"\\updates\\" + to_wstring(this->Uri) + L"\\" + to_wstring(name);
+		fs::create_directories(path);
+	}
+	this->GetApps(true);
+}
+
+void UpdateManager::Host::RemoveApp(string name)
+{
+	int appIndex = 0;
+	App* app = nullptr;
+	for (int i = 0; i < this->Apps.size(); i++) {
+		if (this->Apps[i].Id == name) {
+			appIndex = i;
+			app = &this->Apps[appIndex];
+			break;
+		}
+	}
+	if (!app)
+		return;
+
+	auto path = GetExecutableFolder().wstring() + L"\\updates\\" + to_wstring(this->Uri) + L"\\" + to_wstring(app->Id);
+	if (fs::exists(path))
+		fs::remove_all(path);
+
+	if (app->OnServer) { // OnServer sets only when admin
+		httplib::Client cli("https://" + this->Uri);
+		string auth = this->Login + ":" + this->Password;
+		httplib::Headers headers = {
+  { "Authorization",  base64_encode((const BYTE*)auth.data(), auth.size())}
+		};
+		auto res = cli.Get("/pipeline/v2/update/app/remove/" + name, headers);
+	}
+
+	this->Apps.erase(this->Apps.begin() + appIndex);
+}
+
+vector<App>* UpdateManager::Host::GetApps(bool enforce)
+{
+	if (!enforce && this->Apps.size()) {
+		return &this->Apps;
+	}
+	if (!this->WaitingGetApps)
+		fGetApps[this] = std::async(std::launch::async, [&]()
+			{
+				this->WaitingGetApps = true;
+
+				std::vector<App> ret = std::vector<App>();
+				std::vector<string> onServer;
+				if (this->IsAdmin) {
+					httplib::Client cli("https://" + this->Uri);
+					auto res = cli.Get("/pipeline/v2/update/apps.json");
+					if (res->status == 200)
+					{
+						Json::Value root;
+						Json::Reader reader;
+						reader.parse(res->body, root);
+
+						for (auto obj : root["apps"]) {
+							fs::create_directories(GetExecutableFolder().wstring() + L"\\updates\\" + to_wstring(this->Uri) + L"\\" + to_wstring(obj["name"].asString()));
+							onServer.push_back(obj["name"].asString());
+						}
+					}
+				}
+
+				if (fs::exists(GetExecutableFolder().wstring() + L"\\updates\\"))
+				{
+					for (auto obj : fs::directory_iterator(GetExecutableFolder().wstring() + L"\\updates\\" + to_wstring(this->Uri) + L"\\"))
+					{
+						if (!fs::is_directory(obj))
+							continue;
+						App newVersion;
+						newVersion.Id = obj.path().filename().string();
+						newVersion.Host = this;
+						newVersion.OnServer = std::find(onServer.begin(), onServer.end(), newVersion.Id) != onServer.end();
+						ret.push_back(newVersion);
+					}
+					this->Apps = ret;
+				}
+				this->WaitingGetApps = false;
+			});
 	return &this->Apps;
 }
 
@@ -83,7 +215,7 @@ KeyManager::Key UpdateManager::Host::GetKey(string name)
 
 std::optional<Json::Value> GetDetailsJSON(string host, string ver, string ghub) {
 	httplib::Client cli("https://" + host);
-	auto res = cli.Get("/pipeline/" + ver + "/update/" + ghub + "/win/public/details.json");
+	auto res = cli.Get("/pipeline/" + ver + "/update/" + ghub + "/win/canary/details.json");
 	if (res->status != 200)
 		return nullopt;
 	Json::Value root;
@@ -114,82 +246,94 @@ std::optional<Json::Value> GetJSONFromString(string json) {
 
 vector<Build>* UpdateManager::App::GetBuilds(bool enforce)
 {
-	const auto buildFolder = GetExecutableFolder().wstring() + L"\\updates\\" + to_wstring(this->Host->Uri) + L"\\" + to_wstring(this->Id) + L"\\";
-
-	if (!enforce && this->Builds.size())
+	if (!enforce && this->Builds.size()) {
 		return &this->Builds;
-	Log("Getting builds");
-
-	string lastBuildId = "";
-
-	auto lastBuild = GetDetailsJSON(this->Host->Uri, "v2", this->Id);
-	if (lastBuild.has_value()) {
-		lastBuildId = lastBuild.value()["buildId"].asString();
-		auto buildDirectory = buildFolder + to_wstring(lastBuildId);
-		if (!fs::exists(buildDirectory))
-			fs::create_directories(buildDirectory);
-
-		WriteToFile(buildDirectory + L"\\details.json", lastBuild.value().toStyledString());
-		Log("Found last build on the server: " + dye::light_green(lastBuildId));
 	}
+	if (!this->WaitingGetBuilds)
+		fGetBuilds[this] = std::async([&]() {
+		this->WaitingGetBuilds = true;
+		const auto buildFolder = GetExecutableFolder().wstring() + L"\\updates\\" + to_wstring(this->Host->Uri) + L"\\" + to_wstring(this->Id) + L"\\";
 
-	std::vector<Build> ret = std::vector<Build>();
-	if (fs::exists(GetExecutableFolder().wstring() + L"\\updates\\"))
-	{
-		for (auto obj : fs::directory_iterator(buildFolder))
+		Log("Getting builds");
+
+		string lastBuildId = "";
+		std::vector<Build> ret = std::vector<Build>();
+		auto lastBuild = GetDetailsJSON(this->Host->Uri, "v2", this->Id);
+		if (lastBuild.has_value()) {
+			lastBuildId = lastBuild.value()["buildId"].asString();
+			if (lastBuildId == "0") {
+				this->Builds = ret;
+				return;
+			}
+			auto buildDirectory = buildFolder + to_wstring(lastBuildId);
+			if (!fs::exists(buildDirectory))
+				fs::create_directories(buildDirectory);
+
+			WriteToFile(buildDirectory + L"\\details.json", lastBuild.value().toStyledString());
+			Log("Found last build on the server: " + dye::light_green(lastBuildId));
+		}
+
+
+		if (fs::exists(GetExecutableFolder().wstring() + L"\\updates\\"))
 		{
-			Build* newBuild = new Build(); // idk why but if we do regular object without new, it will be free after this function (btw, todo: fix memory leaks :D)
-			newBuild->App = this;
-			newBuild->Id = obj.path().filename().string();
-			newBuild->LastBuild = lastBuildId == obj.path().filename().string();
-
-			std::optional<Json::Value> details;
-
-			if (newBuild->LastBuild)
+			for (auto obj : fs::directory_iterator(buildFolder))
 			{
-				details = lastBuild;
-			}
-			else
-				if (this->Host->IsAdmin) {
+				if (!fs::is_directory(obj))
+					continue;
+				Build* newBuild = new Build(); // idk why but if we do regular object without new, it will be free after this function (btw, todo: fix memory leaks :D)
+				newBuild->App = this;
+				newBuild->Id = obj.path().filename().string();
+				newBuild->LastBuild = lastBuildId == obj.path().filename().string();
 
-				}
+				std::optional<Json::Value> details;
 
-			if (!details.has_value()) {
-				auto buildDetailsDir = buildFolder + to_wstring(newBuild->Id) + L"\\details.json";
-				if (fs::exists(buildDetailsDir))
+				if (newBuild->LastBuild)
 				{
-					details = GetJSONFromString(ReadFromFile(buildDetailsDir));
-					Log("Found local \"" + dye::light_yellow("details.json") + "\" for build: " + dye::aqua(details.value()["buildId"].asString()));
+					details = lastBuild;
 				}
-			}
+				else
+					if (this->Host->IsAdmin) {
 
-			if (details.has_value()) {
-				if (details.value().isMember("keys") && details.value()["keys"].isMember("accessGroup")) {
-					Log("Found Access Group " + dye::light_aqua(details.value()["keys"]["accessGroup"].asString()) + " in " + dye::aqua(newBuild->Id) + " build");
-					std::optional<Json::Value> content = GetAccessGroupJSON(this->Host->Uri, details.value()["keys"]["accessGroup"].asString());
-					if (content.has_value()) {
-						KeyManager::LoadKeysFromJSON(this->Host, content.value());
+					}
+
+				if (!details.has_value()) {
+					auto buildDetailsDir = buildFolder + to_wstring(newBuild->Id) + L"\\details.json";
+					if (fs::exists(buildDetailsDir))
+					{
+						details = GetJSONFromString(ReadFromFile(buildDetailsDir));
+						Log("Found local \"" + dye::light_yellow("details.json") + "\" for build: " + dye::aqua(details.value()["buildId"].asString()));
 					}
 				}
 
-				for (unsigned int i = 0; i < details.value()["depots"].size(); i++) {
-					auto d = details.value()["depots"][i];
-					BuildFile newBuildFile;
-					newBuildFile.Build = newBuild;
-					newBuildFile.Name = d["name"].asString();
-					newBuildFile.Url = d["url"].asString();
-					newBuildFile.FullPath = buildFolder + to_wstring(newBuild->Id) + L"\\depots\\" + to_wstring(newBuildFile.Name);
-					newBuildFile.UnpackedDir = buildFolder + to_wstring(newBuild->Id) + L"\\unpacked\\" + to_wstring(newBuildFile.Name);
-					newBuildFile.Downloaded = fs::exists(newBuildFile.FullPath);
-					newBuild->Files.push_back(newBuildFile);
-					//break;
-				}
-			}
+				if (details.has_value()) {
+					if (details.value().isMember("keys") && details.value()["keys"].isMember("accessGroup")) {
+						Log("Found Access Group " + dye::light_aqua(details.value()["keys"]["accessGroup"].asString()) + " in " + dye::aqua(newBuild->Id) + " build");
+						std::optional<Json::Value> content = GetAccessGroupJSON(this->Host->Uri, details.value()["keys"]["accessGroup"].asString());
+						if (content.has_value()) {
+							KeyManager::LoadKeysFromJSON(this->Host, content.value());
+						}
+					}
 
-			ret.push_back(*newBuild);
+					for (unsigned int i = 0; i < details.value()["depots"].size(); i++) {
+						auto d = details.value()["depots"][i];
+						BuildFile newBuildFile;
+						newBuildFile.Build = newBuild;
+						newBuildFile.Name = d["name"].asString();
+						newBuildFile.Url = d["url"].asString();
+						newBuildFile.FullPath = buildFolder + to_wstring(newBuild->Id) + L"\\depots\\" + to_wstring(newBuildFile.Name);
+						newBuildFile.UnpackedDir = buildFolder + to_wstring(newBuild->Id) + L"\\unpacked\\" + to_wstring(newBuildFile.Name);
+						newBuildFile.Downloaded = fs::exists(newBuildFile.FullPath);
+						newBuild->Files.push_back(newBuildFile);
+						//break;
+					}
+				}
+
+				ret.push_back(*newBuild);
+			}
+			this->Builds = ret;
 		}
-		this->Builds = ret;
-	}
+		this->WaitingGetBuilds = false;
+			});
 	return &this->Builds;
 }
 
@@ -207,12 +351,16 @@ bool UpdateManager::Build::HasDetails()
 	return this->hasDetails;
 }
 
-void UpdateManager::BuildFile::DownloadDepot()
+void UpdateManager::BuildFile::DownloadDepot(std::function<bool(uint64_t current, uint64_t total)> callback)
 {
 	Log("Downloading file " + this->Name);
 
 	httplib::Client cli("https://" + this->Build->App->Host->Uri);
-	auto res = cli.Get(this->Url);
+	httplib::Result res;
+	if (callback)
+		res = cli.Get(this->Url, callback);
+	else
+		res = cli.Get(this->Url);
 	fs::create_directories(fs::path(this->FullPath).parent_path());
 	WriteToFile(this->FullPath, res->body.data(), res->body.size());
 	this->Downloaded = true;

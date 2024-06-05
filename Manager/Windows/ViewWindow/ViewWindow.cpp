@@ -65,7 +65,7 @@ void ViewWindow::ParseFiles(wstring path, DirectoryNode* parentNode) {
 			ReadBinaryFile(loadedFile->FullPath, &loadedFile->Binary, loadedFile->BinarySize);
 
 
-			if (*(BuildFile::DFileType*)loadedFile->Text.data() == BuildFile::DFileType::Encrypted || *(BuildFile::DFileType*)loadedFile->Text.data() == BuildFile::DFileType::EncryptedFile)
+			if (*(BuildFile::DFileType*)loadedFile->Binary == BuildFile::DFileType::Encrypted || *(BuildFile::DFileType*)loadedFile->Binary == BuildFile::DFileType::EncryptedFile)
 				loadedFile->FileType = LoadedFileType::Encrypted;
 			//if (loadedFile->BinarySize < 1 * 1024 * 1024) {
 				loadedFile->Text = string(loadedFile->Binary, loadedFile->BinarySize);
