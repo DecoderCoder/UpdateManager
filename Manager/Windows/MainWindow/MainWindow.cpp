@@ -185,15 +185,19 @@ bool MainWindow::Render()
 	//disabled = selectedHost == -1;// || !UpdateManager::GetHosts()->at(selectedHost).IsAdmin;
 	if (disabled && selectedHost != -1 && UpdateManager::GetHosts()->at(selectedHost).IsAdmin)
 		ImGui::EndDisabled();
-	if (ImGui::Button("+", ImVec2(30, 0))) {
+	if (ImGui::Button("+##app", ImVec2(30, 0))) {
 		ImGui::OpenPopup("Add App##app");
 	}
 	if (disabled && selectedHost != -1 && UpdateManager::GetHosts()->at(selectedHost).IsAdmin)
 		ImGui::BeginDisabled();
 	ImGui::SameLine();
-	if (ImGui::Button("-", ImVec2(30, 0))) {
+	if (selectedApp != -1 && UpdateManager::GetHosts()->at(selectedHost).GetApps()->at(selectedApp).WaitingGetBuilds)
+		ImGui::BeginDisabled();
+	if (ImGui::Button("-##app", ImVec2(30, 0))) {
 		ImGui::OpenPopup("Remove App##app");
 	}
+	if (selectedApp != -1 && UpdateManager::GetHosts()->at(selectedHost).GetApps()->at(selectedApp).WaitingGetBuilds)
+		ImGui::EndDisabled();
 	if (disabled)
 		ImGui::EndDisabled();
 
@@ -428,7 +432,11 @@ bool MainWindow::Render()
 	//ImGuiWindowClass windowClass;
 	//windowClass.ViewportFlagsOverrideSet = ImGuiViewportFlags_TopMost;
 	//ImGui::SetNextWindowClass(&windowClass);
+
+
 	if (ImGui::BeginPopupModal("Add App##app", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) {
+		bool close = false;
+
 		ImGui::Text(" App Name");
 		ImGui::InputText("##appname", inputAppName, sizeof(inputAppName));
 
@@ -448,15 +456,52 @@ bool MainWindow::Render()
 		}
 
 		if (ImGui::Button("Add", ImVec2(ImGui::GetContentRegionAvail().x / 2 - ImGui::GetStyle().ItemInnerSpacing.x, 0))) {
-			UpdateManager::GetHosts()->at(selectedHost).AddApp(string(inputAppName), comboBoxAppAccessGroup);
-			ResetAddApp();
-			ImGui::CloseCurrentPopup();
+			switch (UpdateManager::GetHosts()->at(selectedHost).AddApp(string(inputAppName), comboBoxAppAccessGroup)) {
+			case UpdateManager::Host::AddAppResponse::HasDeleted: {
+				ImGui::OpenPopup("Already exists##app2");
+				break;
+			}
+			case UpdateManager::Host::AddAppResponse::AlreadyExists: {
+				ResetAddApp();
+				ImGui::OpenPopup("Already Exists##app");
+				break;
+			}
+			default: {
+				ResetAddApp();
+				break;
+			}
+			}
 		}
 		ImGui::SameLine();
 		if (ImGui::Button("Cancel", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
 			ResetAddApp();
 			ImGui::CloseCurrentPopup();
 		}
+
+		if (ImGui::BeginPopupModal("Already exists##app2", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) {
+			ImGui::Text(" App with this name is deleted.\r\nDo you want to restore it or create new?");
+			if (ImGui::Button("Restore", ImVec2(-1, 0))) {
+				UpdateManager::GetHosts()->at(selectedHost).AddApp(string(inputAppName), comboBoxAppAccessGroup, 0);
+				ImGui::CloseCurrentPopup();
+				close = true;
+			}
+
+			if (ImGui::Button("Create new", ImVec2(-1, 0))) {
+				UpdateManager::GetHosts()->at(selectedHost).AddApp(string(inputAppName), comboBoxAppAccessGroup, 1);
+				ImGui::CloseCurrentPopup();
+				close = true;
+			}
+			ImGui::EndPopup();
+		}
+		if (ImGui::BeginPopupModal("Already Exists##app", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) {
+			ImGui::Text("App with this name already exists");
+			if (ImGui::Button("OK")) {
+				ImGui::CloseCurrentPopup();
+			}
+			ImGui::EndPopup();
+		}
+		if (close)
+			ImGui::CloseCurrentPopup();
 		ImGui::EndPopup();
 	}
 	if (ImGui::BeginPopupModal("Remove App##app", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) {

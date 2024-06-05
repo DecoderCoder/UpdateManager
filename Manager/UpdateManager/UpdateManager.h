@@ -146,6 +146,12 @@ namespace UpdateManager {
 	class Host {
 	private:
 	public:
+		enum class AddAppResponse {
+			AlreadyExists,
+			HasDeleted,
+			Success
+		};
+
 		bool WaitingGetApps = false;
 		bool IsAdmin = false;
 
@@ -157,7 +163,7 @@ namespace UpdateManager {
 
 		map<string, std::vector<KeyManager::Key>> accessGroup;
 
-		void AddApp(string name, string accessGroup);
+		AddAppResponse AddApp(string name, string accessGroup, int ifExists = -1);
 		void RemoveApp(string name);
 		vector<App>* GetApps(bool enforce = false);
 		KeyManager::Key GetKey(string name);

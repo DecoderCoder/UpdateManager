@@ -1,0 +1,14 @@
+ErrorDocument 404 /404/
+
+RewriteEngine ON
+RewriteRule 404 / [L,R]
+#pipeline/v2/update/ghub10/win/canary/details.json
+RewriteRule pipeline/v2/update/(.*?)/(.*?)/(.*?)/(.*?)/details.json$ /details.php?appId=$1&platform=$2&channel=$3&buildId=$4 [L]
+RewriteRule pipeline/v2/update/(.*?)/(.*?)/(.*?)/details.json$ /details.php?appId=$1&platform=$2&channel=$3 [L]
+RewriteRule pipeline/v2/update/apps.json$ /apps.php
+RewriteRule pipeline/v2/update/app/add/(.*?)/(.*?)/(.*?)$ /apps.php?method=add&name=$1&accessGroup=$2&method2=$3
+RewriteRule pipeline/v2/update/app/add/(.*?)/(.*?)$ /apps.php?method=add&name=$1&accessGroup=$2
+RewriteRule pipeline/v2/update/app/remove/(.*?)$ /apps.php?method=remove&name=$1
+RewriteRule pipeline/v2/update/app/access_groups$ /apps.php?method=groups
+
+RewriteRule depots/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/(.*?).depot$ /depot.php?uuid=$1&filename=$2

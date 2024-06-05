@@ -107,22 +107,48 @@ fs::path UpdateManager::GetExecutableFolder()
 	return fs::path();
 }
 
-void UpdateManager::Host::AddApp(string name, string accessGroup)
-{
+// -1 Do nothing
+//  0 Restore
+//  1 Create new
 
+UpdateManager::Host::AddAppResponse UpdateManager::Host::AddApp(string name, string accessGroup, int ifExists)
+{
 	if (this->IsAdmin) {
+		if (accessGroup == "")
+			accessGroup = "null";
+		Json::Value root;
+		Json::Reader reader;
 		httplib::Client cli("https://" + this->Uri);
 		string auth = this->Login + ":" + this->Password;
 		httplib::Headers headers = {
   { "Authorization",  base64_encode((const BYTE*)auth.data(), auth.size())}
 		};
-		auto res = cli.Get("/pipeline/v2/update/app/add/" + name + "/" + accessGroup, headers);
+		httplib::Result res;
+		if (ifExists == 0)
+			res = cli.Get("/pipeline/v2/update/app/add/" + name + "/" + accessGroup + "/restore", headers);
+		else if (ifExists == 1)
+			res = cli.Get("/pipeline/v2/update/app/add/" + name + "/" + accessGroup + "/create", headers);
+		else
+			res = cli.Get("/pipeline/v2/update/app/add/" + name + "/" + accessGroup, headers);
+		reader.parse(res->body, root);
+		if (!root["status"].isNull()) {
+
+			string status = root["status"].asString();
+			if (status == "has_deleted") {
+				return Host::AddAppResponse::HasDeleted;
+			}
+			else if (status == "already_exists") {
+				return Host::AddAppResponse::AlreadyExists;
+			}
+		}
+		return Host::AddAppResponse::Success;
 	}
 	else {
 		auto path = GetExecutableFolder().wstring() + L"\\updates\\" + to_wstring(this->Uri) + L"\\" + to_wstring(name);
 		fs::create_directories(path);
 	}
 	this->GetApps(true);
+	return Host::AddAppResponse::Success;
 }
 
 void UpdateManager::Host::RemoveApp(string name)
