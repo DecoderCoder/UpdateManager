@@ -47,7 +47,7 @@ foreach ($files as $file) {
 
 if ($app['accessGroupId'] != null) {
     $accessGroup = $mysql->query('SELECT * FROM `accessGroups` WHERE `id` = ' . $app['accessGroupId'])->fetch_all(MYSQLI_ASSOC)[0];
-    $output['keys']['accessGroup'] = $accessGroup['accessGroup'];
+    $output['keys']['accessGroup'] = $accessGroup['value'];
 }
 
 

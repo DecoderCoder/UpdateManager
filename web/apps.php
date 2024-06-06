@@ -33,7 +33,7 @@ if (!empty($method)) {
                                 {
                                     $appId = $mysql->query('SELECT * FROM `apps` WHERE `name` = \'' . $name . '\'')->fetch_all(MYSQLI_ASSOC)[0]['id'];
                                     foreach ($mysql->query('SELECT * FROM `builds` WHERE `appId` = ' . $appId) as $build) {
-                                        $mysql->query('DELETE FROM `files` WHERE `buildId` = ' . $build['id']);
+                                        $mysql->query('DELETE FROM `depots` WHERE `buildId` = ' . $build['id']);
                                     }
                                     $mysql->query('DELETE FROM `builds` WHERE `appId` = ' . $appId);
                                     $mysql->query('DELETE FROM `apps` WHERE `name` = \'' . $name . '\'');
@@ -58,7 +58,7 @@ if (!empty($method)) {
 
                 $accessGroup = 'null';
                 if ($accessGroupName != "null") {
-                    $resp = $mysql->query('SELECT * FROM `accessgroups` WHERE `accessGroup` = \'' . $accessGroupName . '\'');
+                    $resp = $mysql->query('SELECT * FROM `accessgroups` WHERE `value` = \'' . $accessGroupName . '\'');
                     if ($resp->num_rows > 0) {
                         $accessGroup = $resp->fetch_all(MYSQLI_ASSOC)[0]['id'];
                     }
@@ -67,13 +67,6 @@ if (!empty($method)) {
                 break;
             }
         }
-    if ($method == 'groups') {
-        $output['accessGroups'] = [];
-        foreach ($mysql->query('SELECT * FROM `accessGroups`') as $row) {
-            $output['accessGroups'][] = $row['accessGroup'];
-        }
-
-    }
 }
 
 finish:
