@@ -126,12 +126,12 @@ bool MainWindow::Render()
 		}
 		if (selectedApp < 0)
 			ImGui::BeginDisabled();
-		if (ImGui::BeginMenu("Build")) {
+		//if (ImGui::BeginMenu("Build")) {
 
-			//ImGui::MenuItem("View keys");
+		//	//ImGui::MenuItem("View keys");
 
-			ImGui::EndMenu();
-		}
+		//	ImGui::EndMenu();
+		//}
 		if (selectedApp < 0)
 			ImGui::EndDisabled();
 		ImGui::EndMenuBar();
@@ -268,7 +268,7 @@ bool MainWindow::Render()
 	ImGui::Text("Search by name");
 	ImGui::SetNextItemWidth(-1);
 	ImGui::InputText("##searchinput", searchBuffer, sizeof(searchBuffer));
-	ImGui::BeginChild("##depots", ImVec2(0, 400), ImGuiChildFlags_Border);
+	ImGui::BeginChild("##depots", ImVec2(0, ImGui::GetContentRegionAvail().y - 35), ImGuiChildFlags_Border);
 	{
 		auto depotsText = "Depots";
 		auto windowWidth = ImGui::GetContentRegionAvail().x;
@@ -520,6 +520,7 @@ bool MainWindow::Render()
 			}
 			default: {
 				ResetAddApp();
+				close = true;
 				break;
 			}
 			}
