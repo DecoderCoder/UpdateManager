@@ -84,7 +84,14 @@ std::vector<Host>* UpdateManager::GetHosts(bool enforce)
 				Json::Reader reader;
 				reader.parse(res->body, root);
 				for (auto obj : root["accessGroups"]) {
-					host->AddAccessGroup(obj["name"].asString(), obj["value"].asString());
+					auto accessGroup = host->AddAccessGroup(obj["name"].asString(), obj["value"].asString());
+					if (accessGroup)
+						for (auto key : obj["keys"]) {
+							UpdateManager::KeyManager::Key nKey;
+							nKey.Name = key["name"].asString();
+							nKey.Value = key["value"].asString();
+							accessGroup->Keys.push_back(nKey);
+						}
 				}
 				}, host);
 		}
@@ -159,7 +166,7 @@ UpdateManager::Host::AccessGroup* UpdateManager::Host::AddAccessGroup(string nam
 			return nullptr;
 		}
 	}
-	UpdateManager::Host::AccessGroup* group = new UpdateManager::Host::AccessGroup();
+	UpdateManager::Host::AccessGroup* group = new UpdateManager::Host::AccessGroup(this);
 	group->Name = name;
 	group->Value = value;
 	this->accessGroups.push_back(group);
@@ -291,7 +298,7 @@ vector<App>* UpdateManager::Host::GetApps(bool enforce)
 KeyManager::Key UpdateManager::Host::GetKey(string name)
 {
 	for (auto group : this->accessGroups) {
-		for (auto key : group->keys) {
+		for (auto key : group->Keys) {
 			if (key.Name == name)
 				return key;
 		}
@@ -699,11 +706,11 @@ void UpdateManager::KeyManager::LoadKeysFromJSON(UpdateManager::Host* host, Json
 		auto accessGroup = host->GetAccessGroup(group);
 		if (accessGroup == nullptr)
 			accessGroup = host->AddAccessGroup(group, group);
-		for (auto obj : accessGroup->keys) {
+		for (auto obj : accessGroup->Keys) {
 			if (obj.Value == newKey.Value && obj.Name == newKey.Name)
 				continue;
 		}
-		host->GetAccessGroup(group)->keys.push_back(newKey);
+		host->GetAccessGroup(group)->Keys.push_back(newKey);
 		Log("Added new key (" + dye::aqua(newKey.Name) + ") to accessGroup (" + dye::light_aqua(group) + ")");
 	}
 }
@@ -719,4 +726,49 @@ bool UpdateManager::KeyManager::Key::IsValid()
 	if (this->Name == "" || this->Value == "") // I know that it's not necessary to check name, but just in case
 		return false;
 	return true;
+}
+
+UpdateManager::Host::AccessGroup::AccessGroup(Host* host)
+{
+	this->host = host;
+}
+
+bool UpdateManager::Host::AccessGroup::HasKey(string name)
+{
+	for (auto obj : this->Keys) {
+		if (obj.Name == name)
+			return true;
+	}
+	return false;
+}
+
+void UpdateManager::Host::AccessGroup::AddKey(string name, string value, bool online)
+{
+	KeyManager::Key k;
+	k.Name = name;
+	k.Value = value;
+	this->AddKey(k, online);
+}
+
+void UpdateManager::Host::AccessGroup::AddKey(KeyManager::Key key, bool online)
+{
+	if (this->HasKey(key.Name))
+#ifdef KEYSDUPLICATES
+		Log("Skipped check for key duplicates");
+#endif
+	{
+		if (online && this->host) {
+			httplib::Client cli("https://" + this->host->Uri);
+			string auth = this->host->Login + ":" + this->host->Password;
+			httplib::Headers headers = {
+	  { "Authorization",  base64_encode((const BYTE*)auth.data(), auth.size())}
+			};
+			httplib::Result res = cli.Get("/pipeline/v2/update/access_group/" + this->Value + "/key/add/" + key.Name + "/" + key.Value, headers);
+		}
+
+		KeyManager::Key k;
+		k.Name = key.Name;
+		k.Value = key.Value;
+		this->Keys.push_back(k);
+	}
 }

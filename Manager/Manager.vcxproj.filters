@@ -104,6 +104,15 @@
     <ClInclude Include="UpdateManager\Utils\base64\base64.h">
       <Filter>UpdateManager\Utils\base64</Filter>
     </ClInclude>
+    <ClInclude Include="Utils\uuid_v4\uuid_v4.h">
+      <Filter>Utils\uuid_v4</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\uuid_v4\endianness.h">
+      <Filter>Utils\uuid_v4</Filter>
+    </ClInclude>
+    <ClInclude Include="Utils\Utils.h">
+      <Filter>Utils</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="DirectX">
@@ -141,6 +150,12 @@
     </Filter>
     <Filter Include="UpdateManager\Utils\base64">
       <UniqueIdentifier>{67e1c32d-2a17-4bda-9ed8-a32dd42f717d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Utils">
+      <UniqueIdentifier>{6b062449-5752-446a-a32b-f79a1639700c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Utils\uuid_v4">
+      <UniqueIdentifier>{e957afaa-8a76-4c17-bf74-9b9a18921bd5}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
 </Project>

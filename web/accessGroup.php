@@ -15,10 +15,25 @@ switch ($method) {
             $value = urlencode($_GET['value']);
 
             if ($mysql->query('SELECT * FROM `accessGroups` WHERE `name` = \'' . $name . '\' OR `value` = \'' . $value . '\'')->num_rows == 0) {
-                $mysql->query('INSERT INTO `accessGroups` (`name`, `value`) VALUES (\''.$name.'\', \''.$value.'\')');
+                $mysql->query('INSERT INTO `accessGroups` (`name`, `value`) VALUES (\'' . $name . '\', \'' . $value . '\')');
                 $output['status'] = 'ok';
             } else {
                 $output['status'] = 'already_exists';
+            }
+        }
+        break;
+    }
+    case 'add_key':
+    {
+        if ($authed) {
+            $name = urlencode($_GET['name']);
+            $value = urlencode($_GET['value']);
+
+            $accessGroupValue = urlencode($_GET['accessGroup']);
+            $resp = $mysql->query('SELECT * FROM `accessGroups` WHERE `value` = \'' . $accessGroupValue . '\'');
+            if($resp->num_rows > 0){
+                $accessGroupId = $resp->fetch_all(MYSQLI_ASSOC)[0]['id'];
+                $mysql->query('INSERT INTO `accessKeys` (`accessGroupId`, `name`, `value`) VALUES ('.$accessGroupId.', \''.$name.'\', \''.$value.'\')');
             }
         }
         break;

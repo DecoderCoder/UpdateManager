@@ -16,6 +16,8 @@
 #include "Utils/ini/ini.h"
 #include "Utils/base64/base64.h"
 
+#define KEYSDUPLICATES
+
 using namespace std;
 namespace fs = std::filesystem;
 
@@ -151,11 +153,18 @@ namespace UpdateManager {
 	private:
 	public:
 		class AccessGroup {
+			Host* host;
 		public:
 			string Name;
 			string Value;
 
-			std::vector<KeyManager::Key> keys;
+			AccessGroup(Host* host);
+
+			bool HasKey(string name);
+			void AddKey(string name, string value, bool online = false);
+			void AddKey(KeyManager::Key key, bool online = false);
+
+			std::vector<KeyManager::Key> Keys;
 		};
 
 		enum class AddAppResponse {

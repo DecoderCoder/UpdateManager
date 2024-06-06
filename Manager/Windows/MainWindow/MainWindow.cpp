@@ -89,13 +89,11 @@ string GetBuildsText() {
 bool MainWindow::Render()
 {
 	auto style = ImGui::GetStyle();
-	style.WindowMinSize = ImVec2(900, 600);
-	style.WindowTitleAlign = ImVec2(0.5f, 0.5f);
-	style.FramePadding.y = 10;
 
 	bool disabled = false;
 
-	ImGui::Begin(_PROJECTNAME, &this->Opened, ImGuiWindowFlags_MenuBar);
+	ImGui::SetNextWindowSize(ImVec2(1000, 700), ImGuiCond_FirstUseEver);
+	ImGui::Begin(_PROJECTNAME, &this->Opened, ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoDocking);
 	dockId = ImGui::GetID("viewwindows_dock");
 	for (auto obj : UnpackingProgresses) {
 		ImGui::Text(("Openning " + obj.first->Name).c_str());
@@ -168,10 +166,10 @@ bool MainWindow::Render()
 	}
 
 	ImGui::NextColumn();
-	ImGui::Text(GetAppsText().c_str());
 	disabled = selectedHost == -1 || UpdateManager::GetHosts()->at(selectedHost).WaitingGetApps;
 	if (disabled)
 		ImGui::BeginDisabled();
+	ImGui::Text(GetAppsText().c_str());
 	ImGui::PushItemWidth(-1);
 	if (ImGui::BeginListBox("##app")) {
 		if (selectedHost > -1) {
@@ -218,8 +216,7 @@ bool MainWindow::Render()
 		if (selectedApp > -1) {
 			auto builds = UpdateManager::GetHosts()->at(selectedHost).GetApps()->at(selectedApp).GetBuilds();
 			for (int i = 0; i < builds->size(); i++) {
-				\
-					UpdateManager::Build* build = &builds->at(i);
+				UpdateManager::Build* build = &builds->at(i);
 				if (!build->LastBuild)
 					if (!build->App->Host->IsAdmin && !build->HasDetails())
 						ImGui::BeginDisabled();
@@ -282,7 +279,7 @@ bool MainWindow::Render()
 	}
 
 	ImGui::PushItemWidth(-1);
-	if (ImGui::BeginListBox("##depotslist", ImVec2(0, ImGui::GetContentRegionAvail().y - ImGui::CalcTextSize("abc").y - style.FramePadding.y))) {
+	if (ImGui::BeginListBox("##depotslist", ImVec2(0, ImGui::GetContentRegionAvail().y - ImGui::CalcTextSize("abc").y - style.FramePadding.y * 2 - style.ItemSpacing.y))) {
 		if (selectedBuild > -1) {
 			auto build = &UpdateManager::GetHosts()->at(selectedHost).GetApps()->at(selectedApp).GetBuilds()->at(selectedBuild);
 			auto depots = build->GetDepots();

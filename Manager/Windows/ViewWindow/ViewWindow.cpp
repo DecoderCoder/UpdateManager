@@ -207,6 +207,8 @@ bool ViewWindow::Render()
 	viewClass.DockingAllowUnclassed = false;
 
 	bool disabledStarted = false; // to prevent stack error when Parsing finish earlier than render
+
+	ImGui::SetNextWindowSize(ImVec2(600, 800), ImGuiCond_FirstUseEver);
 	if (parsingFiles) // prevent from closing when loading to exclude exception
 		ImGui::Begin(("View [" + buildFile->Name + "]").c_str(), nullptr, ImGuiWindowFlags_MenuBar);
 	else

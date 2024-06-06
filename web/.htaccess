@@ -5,10 +5,18 @@ RewriteRule 404 / [L,R]
 #pipeline/v2/update/ghub10/win/canary/details.json
 RewriteRule pipeline/v2/update/(.*?)/(.*?)/(.*?)/(.*?)/details.json$ /details.php?appId=$1&platform=$2&channel=$3&buildId=$4 [L]
 RewriteRule pipeline/v2/update/(.*?)/(.*?)/(.*?)/details.json$ /details.php?appId=$1&platform=$2&channel=$3 [L]
+
 RewriteRule pipeline/v2/update/apps.json$ /apps.php
 RewriteRule pipeline/v2/update/app/add/(.*?)/(.*?)/(.*?)$ /apps.php?method=add&name=$1&accessGroup=$2&method2=$3
 RewriteRule pipeline/v2/update/app/add/(.*?)/(.*?)$ /apps.php?method=add&name=$1&accessGroup=$2
 RewriteRule pipeline/v2/update/app/remove/(.*?)$ /apps.php?method=remove&name=$1
-RewriteRule pipeline/v2/update/app/access_groups$ /apps.php?method=groups
+
+
+RewriteRule pipeline/v2/update/access_groups.json$ /accessGroup.php
+RewriteRule pipeline/v2/update/access_group/(.*?)/key/add/(.*?)/(.*?)$ /accessGroup.php?method=add_key&accessGroup=$1&name=$2&value=$3
+RewriteRule pipeline/v2/update/access_group/add/(.*?)/(.*?)$ /accessGroup.php?method=add&name=$1&value=$2
+
+RewriteRule pipeline/v2/update/app/(.*?)/build/add/(.*?)$ /build.php?app=$1&id=$2&method=add
+RewriteRule pipeline/v2/update/app/(.*?)/build/remove/(.*?)$ /build.php?app=$1&id=$2&method=remove
 
 RewriteRule depots/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/(.*?).depot$ /depot.php?uuid=$1&filename=$2

@@ -121,6 +121,9 @@
     <ClInclude Include="UpdateManager\Utils\jsoncpp\json\json.h" />
     <ClInclude Include="UpdateManager\Utils\Logger.h" />
     <ClInclude Include="UpdateManager\Utils\Utils.h" />
+    <ClInclude Include="Utils\Utils.h" />
+    <ClInclude Include="Utils\uuid_v4\endianness.h" />
+    <ClInclude Include="Utils\uuid_v4\uuid_v4.h" />
     <ClInclude Include="Windows\KeyManagerWindow\KeyManagerWindow.h" />
     <ClInclude Include="Windows\MainWindow\MainWindow.h" />
     <ClInclude Include="Windows\ViewWindow\ViewWindow.h" />
