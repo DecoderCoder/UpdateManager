@@ -65,7 +65,7 @@ void ViewWindow::ParseFiles(wstring path, DirectoryNode* parentNode) {
 			ReadBinaryFile(loadedFile->FullPath, &loadedFile->Binary, loadedFile->BinarySize);
 
 
-			if (*(BuildFile::DFileType*)loadedFile->Binary == BuildFile::DFileType::Encrypted || *(BuildFile::DFileType*)loadedFile->Binary == BuildFile::DFileType::EncryptedFile)
+			if (*(BuildDepot::DFileType*)loadedFile->Binary == BuildDepot::DFileType::Encrypted || *(BuildDepot::DFileType*)loadedFile->Binary == BuildDepot::DFileType::EncryptedFile)
 				loadedFile->FileType = LoadedFileType::Encrypted;
 			//if (loadedFile->BinarySize < 1 * 1024 * 1024) {
 				loadedFile->Text = string(loadedFile->Binary, loadedFile->BinarySize);
@@ -74,7 +74,7 @@ void ViewWindow::ParseFiles(wstring path, DirectoryNode* parentNode) {
 
 
 
-			auto a = *(int*)loadedFile->Text.data() & (int)BuildFile::DFileType::Encrypted | (int)BuildFile::DFileType::EncryptedFile;
+			auto a = *(int*)loadedFile->Text.data() & (int)BuildDepot::DFileType::Encrypted | (int)BuildDepot::DFileType::EncryptedFile;
 
 			//if (loadedFile->FileType == LoadedFileType::Image) {
 			DirectX::LoadTextureFromFile(loadedFile->FullPath, loadedFile->Image);
@@ -103,7 +103,7 @@ ViewWindow::ViewWindow(wstring buildFilePath, UpdateManager::Build* build) : Win
 
 	fs::path fileName = fs::path(buildFilePath).filename();
 
-	BuildFile* bFile = new BuildFile();
+	BuildDepot* bFile = new BuildDepot();
 	bFile->Build = build;
 	bFile->Name = fileName.string();
 	bFile->Url = "";
@@ -113,7 +113,7 @@ ViewWindow::ViewWindow(wstring buildFilePath, UpdateManager::Build* build) : Win
 	this->createdByFile = true;
 
 
-	if (bFile->UnpackDepot() == UpdateManager::BuildFile::UnpackResult::Success) {
+	if (bFile->UnpackDepot() == UpdateManager::BuildDepot::UnpackResult::Success) {
 		this->buildFile = bFile;
 		this->windowName = "View [" + this->buildFile->Name + "]";
 		parsingFiles = true;
@@ -122,7 +122,7 @@ ViewWindow::ViewWindow(wstring buildFilePath, UpdateManager::Build* build) : Win
 	}
 }
 
-ViewWindow::ViewWindow(BuildFile* b) : Window()
+ViewWindow::ViewWindow(BuildDepot* b) : Window()
 {
 	this->buildFile = b;
 	this->windowName = "View [" + this->buildFile->Name + "]";
@@ -226,12 +226,12 @@ bool ViewWindow::Render()
 	{
 		if (ImGui::BeginMenu(this->buildFile->Name.c_str()))
 		{
-			if (this->buildFile->CheckDepot() != UpdateManager::BuildFile::UnpackResult::Success) // just in case.. :D
+			if (this->buildFile->CheckDepot() != UpdateManager::BuildDepot::UnpackResult::Success) // just in case.. :D
 				ImGui::BeginDisabled();
 			if (ImGui::MenuItem("Open unpacked folder")) {
 				OpenFolder(this->buildFile->UnpackedDir);
 			}
-			if (this->buildFile->CheckDepot() != UpdateManager::BuildFile::UnpackResult::Success)
+			if (this->buildFile->CheckDepot() != UpdateManager::BuildDepot::UnpackResult::Success)
 				ImGui::EndDisabled();
 			ImGui::Separator();
 			if (!selectedFile)
@@ -338,7 +338,7 @@ bool ViewWindow::Render()
 	return true;
 }
 
-BuildFile* ViewWindow::GetBuildFile()
+BuildDepot* ViewWindow::GetBuildDepot()
 {
 	return this->buildFile;
 }

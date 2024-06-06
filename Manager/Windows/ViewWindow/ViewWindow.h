@@ -41,14 +41,14 @@ class ViewWindow : public Window {
 
 	void FreeNodes(DirectoryNode* node);
 
-	BuildFile* buildFile = nullptr;
+	BuildDepot* buildFile = nullptr;
 	ImGuiID dockId = -1;
 	bool createdByFile = false;
 public:
 	ViewWindow(wstring buildFilePath, UpdateManager::Build* build);
-	ViewWindow(BuildFile* b);
+	ViewWindow(BuildDepot* b);
 	virtual void Close();
 	virtual void SetDock(ImGuiID id);
 	virtual bool Render();
-	BuildFile* GetBuildFile();
+	BuildDepot* GetBuildDepot();
 };

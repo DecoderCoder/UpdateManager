@@ -6,15 +6,15 @@ std::map<Host*, std::future<void>> fGetAccessGroups;
 std::map<Host*, std::future<void>> fGetApps;
 std::map<App*, std::future<void>> fGetBuilds;
 
-string UpdateManager::BuildFile::DFileTypeToString(BuildFile::DFileType type)
+string UpdateManager::BuildDepot::DFileTypeToString(BuildDepot::DFileType type)
 {
 	switch (type)
 	{
-	case BuildFile::DFileType::Default:
+	case BuildDepot::DFileType::Default:
 		return "Default";
-	case BuildFile::DFileType::Encrypted:
+	case BuildDepot::DFileType::Encrypted:
 		return "Encrypted";
-	case BuildFile::DFileType::EncryptedFile:
+	case BuildDepot::DFileType::EncryptedFile:
 		return "EncryptedFile";
 		/*case BuildFile::DFileType::Key:
 			return "Key";*/
@@ -79,12 +79,12 @@ std::vector<Host>* UpdateManager::GetHosts(bool enforce)
 		if (host->IsAdmin) {
 			fGetAccessGroups[host] = std::async(std::launch::async, [](Host* host) {
 				httplib::Client cli("https://" + host->Uri);
-				auto res = cli.Get("/pipeline/v2/update/app/access_groups");
+				auto res = cli.Get("/pipeline/v2/update/access_groups.json");
 				Json::Value root;
 				Json::Reader reader;
 				reader.parse(res->body, root);
 				for (auto obj : root["accessGroups"]) {
-					host->accessGroup[obj.asString()] = std::vector<KeyManager::Key>();
+					host->AddAccessGroup(obj["name"].asString(), obj["value"].asString());
 				}
 				}, host);
 		}
@@ -111,11 +111,69 @@ fs::path UpdateManager::GetExecutableFolder()
 //  0 Restore
 //  1 Create new
 
-UpdateManager::Host::AddAppResponse UpdateManager::Host::AddApp(string name, string accessGroup, int ifExists)
+UpdateManager::Host::AccessGroup* UpdateManager::Host::GetAccessGroup(string value)
+{
+	for (int i = 0; i < this->accessGroups.size(); i++) {
+		if (this->accessGroups[i]->Value == value)
+			return this->accessGroups.at(i);;
+	}
+	return nullptr;
+}
+
+bool UpdateManager::Host::HasAccessGroupName(string name)
+{
+	for (auto obj : this->accessGroups) {
+		if (obj->Name == name)
+			return true;
+	}
+	return false;
+}
+
+bool UpdateManager::Host::HasAccessGroup(string value)
+{
+	for (auto obj : this->accessGroups) {
+		if (obj->Value == value)
+			return true;
+	}
+	return false;
+}
+
+UpdateManager::Host::AccessGroup* UpdateManager::Host::AddAccessGroup(string name, string value, bool online, AddAccessGroupResponse* result)
+{
+	if (this->IsAdmin && online) {
+		Json::Value root;
+		Json::Reader reader;
+		httplib::Client cli("https://" + this->Uri);
+		string auth = this->Login + ":" + this->Password;
+		httplib::Headers headers = {
+  { "Authorization",  base64_encode((const BYTE*)auth.data(), auth.size())}
+		};
+		httplib::Result res = cli.Get("/pipeline/v2/update/access_group/add/" + name + "/" + value, headers);
+		reader.parse(res->body, root);
+		if (root["status"].asString() != "ok") {
+			if (result != nullptr) {
+				if (root["status"].asString() == "already_exists") {
+					*result = AddAccessGroupResponse::AlreadyExists;
+				}
+			}
+			return nullptr;
+		}
+	}
+	UpdateManager::Host::AccessGroup* group = new UpdateManager::Host::AccessGroup();
+	group->Name = name;
+	group->Value = value;
+	this->accessGroups.push_back(group);
+	if (result != nullptr) {
+		*result = AddAccessGroupResponse::Success;
+	}
+	return group;
+}
+
+UpdateManager::Host::AddAppResponse UpdateManager::Host::AddApp(string name, string accessGroupValue, int ifExists)
 {
 	if (this->IsAdmin) {
-		if (accessGroup == "")
-			accessGroup = "null";
+		if (accessGroupValue == "")
+			accessGroupValue = "null";
 		Json::Value root;
 		Json::Reader reader;
 		httplib::Client cli("https://" + this->Uri);
@@ -125,11 +183,11 @@ UpdateManager::Host::AddAppResponse UpdateManager::Host::AddApp(string name, str
 		};
 		httplib::Result res;
 		if (ifExists == 0)
-			res = cli.Get("/pipeline/v2/update/app/add/" + name + "/" + accessGroup + "/restore", headers);
+			res = cli.Get("/pipeline/v2/update/app/add/" + name + "/" + accessGroupValue + "/restore", headers);
 		else if (ifExists == 1)
-			res = cli.Get("/pipeline/v2/update/app/add/" + name + "/" + accessGroup + "/create", headers);
+			res = cli.Get("/pipeline/v2/update/app/add/" + name + "/" + accessGroupValue + "/create", headers);
 		else
-			res = cli.Get("/pipeline/v2/update/app/add/" + name + "/" + accessGroup, headers);
+			res = cli.Get("/pipeline/v2/update/app/add/" + name + "/" + accessGroupValue, headers);
 		reader.parse(res->body, root);
 		if (!root["status"].isNull()) {
 
@@ -187,9 +245,10 @@ vector<App>* UpdateManager::Host::GetApps(bool enforce)
 		return &this->Apps;
 	}
 	if (!this->WaitingGetApps)
+	{
+		this->WaitingGetApps = true;
 		fGetApps[this] = std::async(std::launch::async, [&]()
 			{
-				this->WaitingGetApps = true;
 
 				std::vector<App> ret = std::vector<App>();
 				std::vector<string> onServer;
@@ -225,13 +284,14 @@ vector<App>* UpdateManager::Host::GetApps(bool enforce)
 				}
 				this->WaitingGetApps = false;
 			});
+	}
 	return &this->Apps;
 }
 
 KeyManager::Key UpdateManager::Host::GetKey(string name)
 {
-	for (auto group : this->accessGroup) {
-		for (auto key : group.second) {
+	for (auto group : this->accessGroups) {
+		for (auto key : group->keys) {
 			if (key.Name == name)
 				return key;
 		}
@@ -270,100 +330,117 @@ std::optional<Json::Value> GetJSONFromString(string json) {
 	return root;
 }
 
+void UpdateManager::App::AddBuild(string buildName)
+{
+	if (this->Host->IsAdmin) {
+		Json::Value root;
+		Json::Reader reader;
+		httplib::Client cli("https://" + this->Host->Uri);
+		string auth = this->Host->Login + ":" + this->Host->Password;
+		httplib::Headers headers = {
+  { "Authorization",  base64_encode((const BYTE*)auth.data(), auth.size())}
+		};
+
+		cli.Get("/pipeline/v2/update/app/" + this->Id + "/build/add/" + buildName);
+	}
+	this->GetBuilds(true);
+}
+
 vector<Build>* UpdateManager::App::GetBuilds(bool enforce)
 {
 	if (!enforce && this->Builds.size()) {
 		return &this->Builds;
 	}
-	if (!this->WaitingGetBuilds)
-		fGetBuilds[this] = std::async([&]() {
+	if (!this->WaitingGetBuilds) {
 		this->WaitingGetBuilds = true;
-		const auto buildFolder = GetExecutableFolder().wstring() + L"\\updates\\" + to_wstring(this->Host->Uri) + L"\\" + to_wstring(this->Id) + L"\\";
+		fGetBuilds[this] = std::async([&]() {
+			const auto buildFolder = GetExecutableFolder().wstring() + L"\\updates\\" + to_wstring(this->Host->Uri) + L"\\" + to_wstring(this->Id) + L"\\";
 
-		Log("Getting builds");
+			Log("Getting builds");
 
-		string lastBuildId = "";
-		std::vector<Build> ret = std::vector<Build>();
-		auto lastBuild = GetDetailsJSON(this->Host->Uri, "v2", this->Id);
-		if (lastBuild.has_value()) {
-			lastBuildId = lastBuild.value()["buildId"].asString();
-			if (lastBuildId == "0") {
-				this->Builds = ret;
-				return;
+			string lastBuildId = "";
+			std::vector<Build> ret = std::vector<Build>();
+			auto lastBuild = GetDetailsJSON(this->Host->Uri, "v2", this->Id);
+			if (lastBuild.has_value()) {
+				lastBuildId = lastBuild.value()["buildId"].asString();
+				if (lastBuildId == "0") {
+					this->Builds = ret;
+					return;
+				}
+				auto buildDirectory = buildFolder + to_wstring(lastBuildId);
+				if (!fs::exists(buildDirectory))
+					fs::create_directories(buildDirectory);
+
+				WriteToFile(buildDirectory + L"\\details.json", lastBuild.value().toStyledString());
+				Log("Found last build on the server: " + dye::light_green(lastBuildId));
 			}
-			auto buildDirectory = buildFolder + to_wstring(lastBuildId);
-			if (!fs::exists(buildDirectory))
-				fs::create_directories(buildDirectory);
-
-			WriteToFile(buildDirectory + L"\\details.json", lastBuild.value().toStyledString());
-			Log("Found last build on the server: " + dye::light_green(lastBuildId));
-		}
 
 
-		if (fs::exists(GetExecutableFolder().wstring() + L"\\updates\\"))
-		{
-			for (auto obj : fs::directory_iterator(buildFolder))
+			if (fs::exists(GetExecutableFolder().wstring() + L"\\updates\\"))
 			{
-				if (!fs::is_directory(obj))
-					continue;
-				Build* newBuild = new Build(); // idk why but if we do regular object without new, it will be free after this function (btw, todo: fix memory leaks :D)
-				newBuild->App = this;
-				newBuild->Id = obj.path().filename().string();
-				newBuild->LastBuild = lastBuildId == obj.path().filename().string();
-
-				std::optional<Json::Value> details;
-
-				if (newBuild->LastBuild)
+				for (auto obj : fs::directory_iterator(buildFolder))
 				{
-					details = lastBuild;
-				}
-				else
-					if (this->Host->IsAdmin) {
+					if (!fs::is_directory(obj))
+						continue;
+					Build* newBuild = new Build(); // idk why but if we do regular object without new, it will be free after this function (btw, todo: fix memory leaks :D)
+					newBuild->App = this;
+					newBuild->Id = obj.path().filename().string();
+					newBuild->LastBuild = lastBuildId == obj.path().filename().string();
 
-					}
+					std::optional<Json::Value> details;
 
-				if (!details.has_value()) {
-					auto buildDetailsDir = buildFolder + to_wstring(newBuild->Id) + L"\\details.json";
-					if (fs::exists(buildDetailsDir))
+					if (newBuild->LastBuild)
 					{
-						details = GetJSONFromString(ReadFromFile(buildDetailsDir));
-						Log("Found local \"" + dye::light_yellow("details.json") + "\" for build: " + dye::aqua(details.value()["buildId"].asString()));
+						details = lastBuild;
 					}
-				}
+					else
+						if (this->Host->IsAdmin) {
 
-				if (details.has_value()) {
-					if (details.value().isMember("keys") && details.value()["keys"].isMember("accessGroup")) {
-						Log("Found Access Group " + dye::light_aqua(details.value()["keys"]["accessGroup"].asString()) + " in " + dye::aqua(newBuild->Id) + " build");
-						std::optional<Json::Value> content = GetAccessGroupJSON(this->Host->Uri, details.value()["keys"]["accessGroup"].asString());
-						if (content.has_value()) {
-							KeyManager::LoadKeysFromJSON(this->Host, content.value());
+						}
+
+					if (!details.has_value()) {
+						auto buildDetailsDir = buildFolder + to_wstring(newBuild->Id) + L"\\details.json";
+						if (fs::exists(buildDetailsDir))
+						{
+							details = GetJSONFromString(ReadFromFile(buildDetailsDir));
+							Log("Found local \"" + dye::light_yellow("details.json") + "\" for build: " + dye::aqua(details.value()["buildId"].asString()));
 						}
 					}
 
-					for (unsigned int i = 0; i < details.value()["depots"].size(); i++) {
-						auto d = details.value()["depots"][i];
-						BuildFile newBuildFile;
-						newBuildFile.Build = newBuild;
-						newBuildFile.Name = d["name"].asString();
-						newBuildFile.Url = d["url"].asString();
-						newBuildFile.FullPath = buildFolder + to_wstring(newBuild->Id) + L"\\depots\\" + to_wstring(newBuildFile.Name);
-						newBuildFile.UnpackedDir = buildFolder + to_wstring(newBuild->Id) + L"\\unpacked\\" + to_wstring(newBuildFile.Name);
-						newBuildFile.Downloaded = fs::exists(newBuildFile.FullPath);
-						newBuild->Files.push_back(newBuildFile);
-						//break;
-					}
-				}
+					if (details.has_value()) {
+						if (details.value().isMember("keys") && details.value()["keys"].isMember("accessGroup")) {
+							Log("Found Access Group " + dye::light_aqua(details.value()["keys"]["accessGroup"].asString()) + " in " + dye::aqua(newBuild->Id) + " build");
+							std::optional<Json::Value> content = GetAccessGroupJSON(this->Host->Uri, details.value()["keys"]["accessGroup"].asString());
+							if (content.has_value()) {
+								KeyManager::LoadKeysFromJSON(this->Host, content.value());
+							}
+						}
 
-				ret.push_back(*newBuild);
+						for (unsigned int i = 0; i < details.value()["depots"].size(); i++) {
+							auto d = details.value()["depots"][i];
+							BuildDepot newBuildFile;
+							newBuildFile.Build = newBuild;
+							newBuildFile.Name = d["name"].asString();
+							newBuildFile.Url = d["url"].asString();
+							newBuildFile.FullPath = buildFolder + to_wstring(newBuild->Id) + L"\\depots\\" + to_wstring(newBuildFile.Name);
+							newBuildFile.UnpackedDir = buildFolder + to_wstring(newBuild->Id) + L"\\unpacked\\" + to_wstring(newBuildFile.Name);
+							newBuildFile.Downloaded = fs::exists(newBuildFile.FullPath);
+							newBuild->Files.push_back(newBuildFile);
+							//break;
+						}
+					}
+
+					ret.push_back(*newBuild);
+				}
+				this->Builds = ret;
 			}
-			this->Builds = ret;
-		}
-		this->WaitingGetBuilds = false;
+			this->WaitingGetBuilds = false;
 			});
+	}
 	return &this->Builds;
 }
 
-vector<BuildFile>* UpdateManager::Build::GetFiles()
+vector<BuildDepot>* UpdateManager::Build::GetDepots()
 {
 	return &this->Files;
 }
@@ -377,7 +454,7 @@ bool UpdateManager::Build::HasDetails()
 	return this->hasDetails;
 }
 
-void UpdateManager::BuildFile::DownloadDepot(std::function<bool(uint64_t current, uint64_t total)> callback)
+void UpdateManager::BuildDepot::DownloadDepot(std::function<bool(uint64_t current, uint64_t total)> callback)
 {
 	Log("Downloading file " + this->Name);
 
@@ -392,7 +469,7 @@ void UpdateManager::BuildFile::DownloadDepot(std::function<bool(uint64_t current
 	this->Downloaded = true;
 }
 
-BuildFile::LoadResult UpdateManager::BuildFile::LoadDepot(bool force)
+BuildDepot::LoadResult UpdateManager::BuildDepot::LoadDepot(bool force)
 {
 	if (!force && this->lastLoadResult != LoadResult::Null)
 		return this->lastLoadResult;
@@ -422,9 +499,9 @@ BuildFile::LoadResult UpdateManager::BuildFile::LoadDepot(bool force)
 	memset(this->Depot, 0, depotSize);
 	ReadBinaryFile(this->FullPath, this->Depot, depotSize);
 
-	this->FileType = *(BuildFile::DFileType*)this->Depot;
+	this->FileType = *(BuildDepot::DFileType*)this->Depot;
 	{
-		int validEnum = (int)BuildFile::DFileType::Default | (int)BuildFile::DFileType::Encrypted | (int)BuildFile::DFileType::EncryptedFile;// | (int)BuildFile::DFileType::Key;
+		int validEnum = (int)BuildDepot::DFileType::Default | (int)BuildDepot::DFileType::Encrypted | (int)BuildDepot::DFileType::EncryptedFile;// | (int)BuildFile::DFileType::Key;
 		if (!((int)this->FileType & validEnum))
 		{
 			free(this->Depot);
@@ -439,16 +516,16 @@ BuildFile::LoadResult UpdateManager::BuildFile::LoadDepot(bool force)
 	return LoadResult::Success;
 }
 
-void UpdateManager::BuildFile::UnloadDepot()
+void UpdateManager::BuildDepot::UnloadDepot()
 {
 	if (this->Depot != nullptr)
 		free(this->Depot);
 	this->Depot = nullptr;
 	this->DepotSize = 0;
-	this->lastLoadResult = BuildFile::LoadResult::Null;
+	this->lastLoadResult = BuildDepot::LoadResult::Null;
 }
 
-BuildFile::UnpackResult UpdateManager::BuildFile::CheckDepot(bool force)
+BuildDepot::UnpackResult UpdateManager::BuildDepot::CheckDepot(bool force)
 {
 	if (!force && this->lastCheckResult != UnpackResult::Null)
 		return this->lastCheckResult;
@@ -456,10 +533,10 @@ BuildFile::UnpackResult UpdateManager::BuildFile::CheckDepot(bool force)
 		return UnpackResult::Success;
 	if (this->Depot == nullptr)
 	{
-		BuildFile::LoadResult loadResult = BuildFile::LoadDepot();
-		if (loadResult != BuildFile::LoadResult::Success)
+		BuildDepot::LoadResult loadResult = BuildDepot::LoadDepot();
+		if (loadResult != BuildDepot::LoadResult::Success)
 		{
-			this->lastCheckResult = BuildFile::UnpackResult::LoadError;
+			this->lastCheckResult = BuildDepot::UnpackResult::LoadError;
 			return this->lastCheckResult;
 		}
 	}
@@ -467,11 +544,11 @@ BuildFile::UnpackResult UpdateManager::BuildFile::CheckDepot(bool force)
 		if (this->FileType == DFileType::Encrypted || this->FileType == DFileType::EncryptedFile)
 		{
 			Json::Value JSONData;
-			unsigned int JSONLength = *(unsigned int*)(this->Depot + sizeof(BuildFile::DFileType));
+			unsigned int JSONLength = *(unsigned int*)(this->Depot + sizeof(BuildDepot::DFileType));
 			{
 				Json::Reader reader;
 
-				string json = string(this->Depot + sizeof(BuildFile::DFileType) + sizeof(unsigned int), this->Depot + sizeof(BuildFile::DFileType) + sizeof(unsigned int) + JSONLength);
+				string json = string(this->Depot + sizeof(BuildDepot::DFileType) + sizeof(unsigned int), this->Depot + sizeof(BuildDepot::DFileType) + sizeof(unsigned int) + JSONLength);
 				reader.parse(json, JSONData);
 			}
 
@@ -499,14 +576,14 @@ BuildFile::UnpackResult UpdateManager::BuildFile::CheckDepot(bool force)
 
 	if (fs::exists(this->UnpackedDir))
 	{
-		this->lastCheckResult = BuildFile::UnpackResult::Success;
+		this->lastCheckResult = BuildDepot::UnpackResult::Success;
 		return this->lastCheckResult;
 	}
-	this->lastCheckResult = BuildFile::UnpackResult::NotUnpackedYet;
+	this->lastCheckResult = BuildDepot::UnpackResult::NotUnpackedYet;
 	return this->lastCheckResult;
 }
 
-BuildFile::UnpackResult UpdateManager::BuildFile::UnpackDepot(int* progress, int* progressMax, bool force)
+BuildDepot::UnpackResult UpdateManager::BuildDepot::UnpackDepot(int* progress, int* progressMax, bool force)
 {
 	if (!force && this->lastUnpackResult != UnpackResult::Null)
 		return this->lastUnpackResult;
@@ -531,16 +608,16 @@ BuildFile::UnpackResult UpdateManager::BuildFile::UnpackDepot(int* progress, int
 	//}
 
 	Json::Value JSONData;
-	unsigned int JSONLength = *(unsigned int*)(this->Depot + sizeof(BuildFile::DFileType));
+	unsigned int JSONLength = *(unsigned int*)(this->Depot + sizeof(BuildDepot::DFileType));
 	{
 		Json::Reader reader;
 
-		string json = string(this->Depot + sizeof(BuildFile::DFileType) + sizeof(unsigned int), this->Depot + sizeof(BuildFile::DFileType) + sizeof(unsigned int) + JSONLength);
+		string json = string(this->Depot + sizeof(BuildDepot::DFileType) + sizeof(unsigned int), this->Depot + sizeof(BuildDepot::DFileType) + sizeof(unsigned int) + JSONLength);
 		reader.parse(json, JSONData);
 	}
 
 	// Reading files
-	int offset = sizeof(BuildFile::DFileType) + sizeof(unsigned int) + JSONLength;
+	int offset = sizeof(BuildDepot::DFileType) + sizeof(unsigned int) + JSONLength;
 
 	if (this->FileType == DFileType::EncryptedFile) {
 		KeyManager::Key key = this->Build->App->Host->GetKey(JSONData["key-id"].asString());
@@ -551,7 +628,7 @@ BuildFile::UnpackResult UpdateManager::BuildFile::UnpackDepot(int* progress, int
 		}
 		unsigned int fileSize = *(unsigned int*)(this->Depot + offset);
 		offset += sizeof(unsigned int);
-		string decryptedData = DecryptAES(string(this->Depot + offset, fileSize), key.Key, GetIV(JSONData["file-sha"].asString(), key.Name));
+		string decryptedData = DecryptAES(string(this->Depot + offset, fileSize), key.Value, GetIV(JSONData["file-sha"].asString(), key.Name));
 		fs::create_directories(this->UnpackedDir);
 		WriteToFile(this->UnpackedDir + L"\\" + fs::path(this->Name).filename().wstring(), decryptedData.data(), decryptedData.size());
 	}
@@ -566,7 +643,7 @@ BuildFile::UnpackResult UpdateManager::BuildFile::UnpackDepot(int* progress, int
 			unsigned int fileSize = *(unsigned int*)(this->Depot + offset);
 			offset += sizeof(unsigned int);
 			if (this->FileType == DFileType::Encrypted && i == 0) {
-				auto jsondata = DecryptAES(string(this->Depot + offset, fileSize), this->Key.Key, GetIV(this->sha, this->Key.Name));
+				auto jsondata = DecryptAES(string(this->Depot + offset, fileSize), this->Key.Value, GetIV(this->sha, this->Key.Name));
 				JSONData = GetJSONFromString(jsondata).value();
 				offset += fileSize;
 				continue;
@@ -580,7 +657,7 @@ BuildFile::UnpackResult UpdateManager::BuildFile::UnpackDepot(int* progress, int
 				WriteToFile(this->UnpackedDir + L"\\" + to_wstring(fileName), this->Depot + offset, fileSize);
 			else
 			{
-				string decryptedData = DecryptAES(string(this->Depot + offset, fileSize), this->Key.Key, GetIV(JSONData["files"][(this->FileType == DFileType::Encrypted ? i - 1 : i)]["sha"].asString(), this->Key.Name));
+				string decryptedData = DecryptAES(string(this->Depot + offset, fileSize), this->Key.Value, GetIV(JSONData["files"][(this->FileType == DFileType::Encrypted ? i - 1 : i)]["sha"].asString(), this->Key.Name));
 				WriteToFile(this->UnpackedDir + L"\\" + to_wstring(fileName), decryptedData.data(), decryptedData.size());
 			}
 
@@ -600,9 +677,14 @@ BuildFile::UnpackResult UpdateManager::BuildFile::UnpackDepot(int* progress, int
 	return UnpackResult::Success;
 }
 
-BuildFile::UnpackResult UpdateManager::BuildFile::UnpackDepot(bool force)
+BuildDepot::UnpackResult UpdateManager::BuildDepot::UnpackDepot(bool force)
 {
 	return UnpackDepot(nullptr, nullptr, force);
+}
+
+void UpdateManager::BuildDepot::PackDepot()
+{
+
 }
 
 void UpdateManager::KeyManager::LoadKeysFromJSON(UpdateManager::Host* host, Json::Value json)
@@ -611,14 +693,17 @@ void UpdateManager::KeyManager::LoadKeysFromJSON(UpdateManager::Host* host, Json
 	for (auto obj : json["keys"]) {
 		KeyManager::Key newKey;
 		newKey.Name = obj["name"].asString();
-		newKey.Key = obj["key"].asString();
+		newKey.Value = obj["key"].asString();
 		/*if (KeyManager::accessGroup[group].Key == newKey.Key && KeyManager::accessGroup[group].Name)
 			KeyManager::accessGroup[group] = newKey;*/
-		for (auto obj : host->accessGroup[group]) {
-			if (obj.Key == newKey.Key && obj.Name == newKey.Name)
+		auto accessGroup = host->GetAccessGroup(group);
+		if (accessGroup == nullptr)
+			accessGroup = host->AddAccessGroup(group, group);
+		for (auto obj : accessGroup->keys) {
+			if (obj.Value == newKey.Value && obj.Name == newKey.Name)
 				continue;
 		}
-		host->accessGroup[group].push_back(newKey);
+		host->GetAccessGroup(group)->keys.push_back(newKey);
 		Log("Added new key (" + dye::aqua(newKey.Name) + ") to accessGroup (" + dye::light_aqua(group) + ")");
 	}
 }
@@ -631,7 +716,7 @@ void UpdateManager::KeyManager::LoadKeysFromJSON(UpdateManager::Host* host, stri
 
 bool UpdateManager::KeyManager::Key::IsValid()
 {
-	if (this->Name == "" || this->Key == "") // I know that it's not necessary to check name, but just in case
+	if (this->Name == "" || this->Value == "") // I know that it's not necessary to check name, but just in case
 		return false;
 	return true;
 }

@@ -23,7 +23,8 @@ namespace UpdateManager {
 	class Build;
 	class App;
 	class Host;
-	class BuildFile;
+	class AccessGroup;
+	class BuildDepot;
 
 	namespace KeyManager {
 		class Key;
@@ -31,7 +32,7 @@ namespace UpdateManager {
 		class Key {
 		public:
 			string Name;
-			string Key;
+			string Value;
 
 			bool IsValid();
 		};
@@ -60,7 +61,7 @@ namespace UpdateManager {
 	//	
 	//};
 
-	class BuildFile
+	class BuildDepot
 	{
 	public:
 		enum class UnpackResult {
@@ -95,7 +96,7 @@ namespace UpdateManager {
 		string sha;
 		KeyManager::Key Key;
 
-		string DFileTypeToString(BuildFile::DFileType type);
+		string DFileTypeToString(BuildDepot::DFileType type);
 
 		Build* Build;
 		string Name;
@@ -115,6 +116,8 @@ namespace UpdateManager {
 		UnpackResult CheckDepot(bool force = true);
 		UnpackResult UnpackDepot(int* file, int* fileCount, bool force = true);
 		UnpackResult UnpackDepot(bool force = true);
+
+		void PackDepot();
 	};
 
 	class Build {
@@ -126,9 +129,9 @@ namespace UpdateManager {
 		App* App;
 		bool LastBuild;
 
-		vector<BuildFile> Files;
+		vector<BuildDepot> Files;
 
-		vector<BuildFile>* GetFiles();
+		vector<BuildDepot>* GetDepots();
 
 		bool HasDetails();
 	};
@@ -140,15 +143,29 @@ namespace UpdateManager {
 		string Id;
 		Host* Host;
 		vector<Build> Builds;
+		void AddBuild(string buildName);
 		vector<Build>* GetBuilds(bool enforce = false);
 	};
 
 	class Host {
 	private:
 	public:
+		class AccessGroup {
+		public:
+			string Name;
+			string Value;
+
+			std::vector<KeyManager::Key> keys;
+		};
+
 		enum class AddAppResponse {
 			AlreadyExists,
 			HasDeleted,
+			Success
+		};
+
+		enum class AddAccessGroupResponse {
+			AlreadyExists,
 			Success
 		};
 
@@ -161,9 +178,14 @@ namespace UpdateManager {
 		string Uri = "";
 		vector<App> Apps;
 
-		map<string, std::vector<KeyManager::Key>> accessGroup;
+		std::vector<AccessGroup*> accessGroups;
 
-		AddAppResponse AddApp(string name, string accessGroup, int ifExists = -1);
+		UpdateManager::Host::AccessGroup* GetAccessGroup(string value);
+		bool HasAccessGroupName(string name);
+		bool HasAccessGroup(string value);
+		UpdateManager::Host::AccessGroup* AddAccessGroup(string name, string value, bool online = false, AddAccessGroupResponse* result = nullptr);
+
+		AddAppResponse AddApp(string name, string accessGroupValue, int ifExists = -1);
 		void RemoveApp(string name);
 		vector<App>* GetApps(bool enforce = false);
 		KeyManager::Key GetKey(string name);
@@ -173,6 +195,7 @@ namespace UpdateManager {
 
 	void AddHost(string host, bool isAdmin = false, string login = "", string password = "");
 	void RemoveHost(string name);
+
 	std::vector<Host>* GetHosts(bool enforce = false);
 
 	fs::path GetExecutableFolder();
@@ -180,7 +203,7 @@ namespace UpdateManager {
 	string GetUpdateManagerPath(UpdateManager::Host host);
 	string GetUpdateManagerPath(UpdateManager::App app);
 	string GetUpdateManagerPath(UpdateManager::Build build);
-	string GetUpdateManagerPath(UpdateManager::BuildFile buildFile);
+	string GetUpdateManagerPath(UpdateManager::BuildDepot buildFile);
 }
 
 using namespace UpdateManager;
