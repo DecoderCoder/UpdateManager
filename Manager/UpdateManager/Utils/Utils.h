@@ -2,6 +2,7 @@
 #include <string>
 #include <fstream>
 #include <Shlobj.h>
+#include <vector>
 
 using namespace std;
 

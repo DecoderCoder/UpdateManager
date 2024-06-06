@@ -33,6 +33,7 @@ namespace DirectX {
 	void CleanupDeviceD3D();
 	void CreateRenderTarget();
 	void CleanupRenderTarget();
+	bool LoadTextureFromMemory(unsigned char* buffer, size_t bufferSize, ID3D11ShaderResourceView*& out);
 	bool LoadTextureFromFile(std::wstring filename, ID3D11ShaderResourceView*& out);
 	void Init();
 	void Deinit();

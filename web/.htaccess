@@ -20,3 +20,7 @@ RewriteRule pipeline/v2/update/app/(.*?)/build/add/(.*?)$ /build.php?app=$1&id=$
 RewriteRule pipeline/v2/update/app/(.*?)/build/remove/(.*?)$ /build.php?app=$1&id=$2&method=remove
 
 RewriteRule depots/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/(.*?).depot$ /depot.php?uuid=$1&filename=$2
+
+<Files "Apache*vhost.conf">
+    Require all denied
+</Files>

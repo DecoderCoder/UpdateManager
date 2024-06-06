@@ -19,8 +19,6 @@ std::map<UpdateManager::BuildDepot*, std::pair<int, int>> UnpackingProgresses; /
 std::vector<UpdateManager::BuildDepot*> openingBuilds;
 ImGuiID dockId;
 
-KeyManagerWindow* keyManagerWindow;
-
 bool modalHostAdditional = false;
 bool modalHostIsAdmin = false;
 
@@ -86,10 +84,26 @@ string GetBuildsText() {
 	return text;
 }
 
+bool openSettings = false;
+
 bool MainWindow::Render()
 {
-	auto style = ImGui::GetStyle();
+	auto style = &ImGui::GetStyle();
+	if (Settings::DarkMode) {
+		style->FrameBorderSize = 0;
+		ImGui::StyleColorsDark();
+	}
+	else
+	{
+		ImGui::StyleColorsLight();
+		style->FrameBorderSize = 1;
+	}
 
+	
+	style->WindowTitleAlign = ImVec2(0.5f, 0.5f);
+	style->AntiAliasedFill = true;
+	style->AntiAliasedLines = true;
+	style->AntiAliasedLinesUseTex = true;
 	bool disabled = false;
 
 	ImGui::SetNextWindowSize(ImVec2(1000, 700), ImGuiCond_FirstUseEver);
@@ -112,16 +126,57 @@ bool MainWindow::Render()
 		ImGui::End();
 		return false;
 	}
+
+	if (openSettings) {
+		ImGui::OpenPopup("Settings##mainwindow");
+		openSettings = false;
+	}
+
 	if (ImGui::BeginMenuBar())
 	{
 		if (ImGui::BeginMenu(_PROJECTNAME))
 		{
-			ImGui::MenuItem("Settings");
-			if (ImGui::MenuItem("Keys Manager")) {
-				keyManagerWindow = new KeyManagerWindow();
-				keyManagerWindow->Show();
+			if (ImGui::MenuItem("Settings")) {
+				openSettings = true;
 			}
-			ImGui::MenuItem("About");
+			if (ImGui::MenuItem("Keys Manager")) {
+				KeyManagerWindow* keyManagerWindow = nullptr;
+				for (Window*& obj : DirectX::Windows) {
+					KeyManagerWindow* view = dynamic_cast<KeyManagerWindow*>(obj);
+					if (view) {
+						keyManagerWindow = (KeyManagerWindow*)obj;
+						break;
+					}
+				}
+				if (!keyManagerWindow) {
+					keyManagerWindow = new KeyManagerWindow();
+					keyManagerWindow->Show();
+				}
+				else {
+					keyManagerWindow->Show();
+				}
+			}
+			ImGui::Separator();
+			//if (ImGui::MenuItem("Change theme")) {
+			//	Settings::darkMode = !Settings::darkMode;
+			//}
+			if (ImGui::MenuItem("About")) {
+				AboutWindow* aboutWindow = nullptr;
+				for (Window*& obj : DirectX::Windows) {
+					AboutWindow* view = dynamic_cast<AboutWindow*>(obj);
+					if (view) {
+						aboutWindow = (AboutWindow*)obj;
+						break;
+					}
+				}
+				if (!aboutWindow) {
+					aboutWindow = new AboutWindow();
+					aboutWindow->Show();
+				}
+				else {
+					aboutWindow->Show();
+				}
+			}
 			ImGui::EndMenu();
 		}
 		if (selectedApp < 0)
@@ -279,7 +334,7 @@ bool MainWindow::Render()
 	}
 
 	ImGui::PushItemWidth(-1);
-	if (ImGui::BeginListBox("##depotslist", ImVec2(0, ImGui::GetContentRegionAvail().y - ImGui::CalcTextSize("abc").y - style.FramePadding.y * 2 - style.ItemSpacing.y))) {
+	if (ImGui::BeginListBox("##depotslist", ImVec2(0, ImGui::GetContentRegionAvail().y - ImGui::CalcTextSize("abc").y - style->FramePadding.y * 2 - style->ItemSpacing.y))) {
 		if (selectedBuild > -1) {
 			auto build = &UpdateManager::GetHosts()->at(selectedHost).GetApps()->at(selectedApp).GetBuilds()->at(selectedBuild);
 			auto depots = build->GetDepots();
@@ -371,7 +426,7 @@ bool MainWindow::Render()
 					CreateThread(NULL, NULL, [](void* data) -> DWORD {
 						UpdateManager::BuildDepot* openingBuild = openingBuilds.back(); // may cause misleading if you click another file faster than CreateThread was called (lol just try)
 
-						if (!openingBuild->Downloaded)
+						if (!openingBuild->Downloaded && openingBuild->OnServer)
 							openingBuild->DownloadDepot();
 						DownloadingCount--;
 						ViewWindow* openedWindow = nullptr;
@@ -384,7 +439,7 @@ bool MainWindow::Render()
 						}
 						if (!openedWindow) {
 							UnpackingProgresses[openingBuild] = make_pair(0, 1);
-							if (openingBuild->UnpackDepot(&UnpackingProgresses[openingBuild].first, &UnpackingProgresses[openingBuild].second) == BuildDepot::UnpackResult::Success) {
+							if (!openingBuild->OnServer || openingBuild->UnpackDepot(&UnpackingProgresses[openingBuild].first, &UnpackingProgresses[openingBuild].second) == BuildDepot::UnpackResult::Success) {
 								ViewWindow* window = new ViewWindow(openingBuild);
 								window->SetDock(dockId);
 							}
@@ -400,19 +455,28 @@ bool MainWindow::Render()
 						}, NULL, NULL, NULL);
 				}
 
-				ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - ImGui::CalcTextSize(text).x);
-				if (strcmp(text, "Key not found") == 0) { // I'm 2lazy to do this at CheckDepot ;(
-					ImGui::PushStyleColor(ImGuiCol_TextDisabled, ImVec4(0.91f, 0.30f, 0.24f, 1.f));
-					ImGui::TextDisabled(text);
-					ImGui::PopStyleColor();
-				}
-				else if (strcmp(text, "Unpacked") == 0) {
-					ImGui::PushStyleColor(ImGuiCol_TextDisabled, ImVec4(0.18f, 0.8f, 0.443f, 1));
-					ImGui::TextDisabled(text);
+
+				if (UpdateManager::GetHosts()->at(selectedHost).IsAdmin && !depot->OnServer) {
+					ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - ImGui::CalcTextSize("Local depot").x);
+					ImGui::PushStyleColor(ImGuiCol_TextDisabled, ImVec4(0.945, 0.769, 0.059, 1.f));
+					ImGui::TextDisabled("Local depot");
 					ImGui::PopStyleColor();
 				}
 				else {
-					ImGui::TextDisabled(text);
+					ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - ImGui::CalcTextSize(text).x);
+					if (strcmp(text, "Key not found") == 0) { // I'm 2lazy to do this at CheckDepot ;(
+						ImGui::PushStyleColor(ImGuiCol_TextDisabled, ImVec4(0.91f, 0.30f, 0.24f, 1.f));
+						ImGui::TextDisabled(text);
+						ImGui::PopStyleColor();
+					}
+					else if (strcmp(text, "Unpacked") == 0) {
+						ImGui::PushStyleColor(ImGuiCol_TextDisabled, ImVec4(0.18f, 0.8f, 0.443f, 1));
+						ImGui::TextDisabled(text);
+						ImGui::PopStyleColor();
+					}
+					else {
+						ImGui::TextDisabled(text);
+					}
 				}
 
 				if (!build->App->Host->IsAdmin && !build->LastBuild && !depot->Downloaded) {
@@ -424,7 +488,7 @@ bool MainWindow::Render()
 		ImGui::EndListBox();
 	}
 
-	if (ImGui::Button("Add depot", ImVec2(ImGui::GetContentRegionAvail().x / 2 - style.FramePadding.x, 0))) {
+	if (ImGui::Button("Add depot", ImVec2(ImGui::GetContentRegionAvail().x / 2 - style->FramePadding.x, 0))) {
 
 	}
 	ImGui::SameLine();
@@ -437,23 +501,43 @@ bool MainWindow::Render()
 
 	if (selectedBuild == -1)
 		ImGui::BeginDisabled();
-	ImGui::Button("Download all", ImVec2(ImGui::GetContentRegionAvail().x / 3 - style.FramePadding.x, 0));
+	ImGui::Button("Download all", ImVec2(ImGui::GetContentRegionAvail().x / 3 - style->FramePadding.x, 0));
 	if (selectedBuild == -1)
 		ImGui::EndDisabled();
 	ImGui::SameLine();
 	disabled = selectedBuild == -1 || !UpdateManager::GetHosts()->at(selectedHost).IsAdmin;
 	if (disabled)
 		ImGui::BeginDisabled();
-	ImGui::Button("Upload all", ImVec2(ImGui::GetContentRegionAvail().x / 2 - style.FramePadding.x, 0));
+	ImGui::Button("Upload all", ImVec2(ImGui::GetContentRegionAvail().x / 2 - style->FramePadding.x, 0));
 	if (disabled)
 		ImGui::EndDisabled();
 	ImGui::SameLine();
 	ImGui::Button("Open", ImVec2(ImGui::GetContentRegionAvail().x, 0));
 	ImGui::Spacing();
 
-	//ImGuiWindowClass windowClass;
-	//windowClass.ViewportFlagsOverrideSet = ImGuiViewportFlags_TopMost;
-	//ImGui::SetNextWindowClass(&windowClass);
+	//ImGui::SetNextWindowSize(ImVec2(1000, 700), ImGuiCond_FirstUseEver);
+	if (ImGui::BeginPopupModal("Settings##mainwindow", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) {
+		ImGui::Checkbox("Dark Mode", &Settings::DarkMode);
+		ImGui::Checkbox("Use SSL", &Settings::UseSSL);
+		ImGui::SliderInt("Threads count", &Settings::ThreadsCount, 1, 32);
+
+#ifdef _DEBUG
+		ImGui::Checkbox("Show ImGui Demo", &Settings::ShowImGuiDemoWindow);
+#endif
+
+		ImGui::BeginChild("Admin#settings", ImVec2(ImGui::GetContentRegionAvail().x, 0), ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_AlwaysAutoResize | ImGuiChildFlags_Border);
+
+		ImGui::Checkbox("Ask about downloading actual version", &Settings::Admin::AskDownloadNew);
+
+		ImGui::EndChild();
+
+		if (ImGui::Button("Save", ImVec2(-1, 0))) {
+			Settings::SaveSettings();
+			ImGui::CloseCurrentPopup();
+		}
+
+		ImGui::EndPopup();
+	}
 
 	if (ImGui::BeginPopupModal("Add Build##build", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) {
 		bool close = false;

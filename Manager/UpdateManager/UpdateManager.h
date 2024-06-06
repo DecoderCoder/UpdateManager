@@ -110,6 +110,7 @@ namespace UpdateManager {
 		char* Depot;
 		size_t DepotSize;
 		bool Downloaded;
+		bool OnServer;
 
 		void DownloadDepot(std::function<bool(uint64_t current, uint64_t total)> callback = nullptr);
 		LoadResult LoadDepot(bool force = true);
@@ -131,11 +132,12 @@ namespace UpdateManager {
 		App* App;
 		bool LastBuild;
 
-		vector<BuildDepot> Files;
+		vector<BuildDepot> Depots;
 
 		vector<BuildDepot>* GetDepots();
 
 		bool HasDetails();
+		bool HasDepot(string name);
 	};
 
 	class App {

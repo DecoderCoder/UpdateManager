@@ -27,7 +27,7 @@ switch ($method) {
     {
         if ($authed) {
             $name = urlencode($_GET['name']);
-            $value = urlencode($_GET['value']);
+            $value = $_GET['value'];
 
             $accessGroupValue = urlencode($_GET['accessGroup']);
             $resp = $mysql->query('SELECT * FROM `accessGroups` WHERE `value` = \'' . $accessGroupValue . '\'');

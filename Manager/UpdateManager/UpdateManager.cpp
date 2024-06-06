@@ -196,8 +196,7 @@ UpdateManager::Host::AddAppResponse UpdateManager::Host::AddApp(string name, str
 		else
 			res = cli.Get("/pipeline/v2/update/app/add/" + name + "/" + accessGroupValue, headers);
 		reader.parse(res->body, root);
-		if (!root["status"].isNull()) {
-
+		if (!root.isMember("status")) {
 			string status = root["status"].asString();
 			if (status == "has_deleted") {
 				return Host::AddAppResponse::HasDeleted;
@@ -414,6 +413,23 @@ vector<Build>* UpdateManager::App::GetBuilds(bool enforce)
 						}
 					}
 
+					if (this->Host->IsAdmin) {
+						wstring unpackedsDir = buildFolder + to_wstring(newBuild->Id) + L"\\unpacked\\";
+						if (fs::exists(unpackedsDir))
+							for (auto obj2 : fs::directory_iterator(unpackedsDir)) {
+								if (!obj2.is_directory())
+									continue;
+								BuildDepot newBuildFile;
+								newBuildFile.Build = newBuild;
+								newBuildFile.Name = obj2.path().filename().string();
+								newBuildFile.Url = "";
+
+								newBuildFile.UnpackedDir = obj2.path().wstring();
+								newBuildFile.OnServer = false;
+								newBuild->Depots.push_back(newBuildFile);
+							}
+					}
+
 					if (details.has_value()) {
 						if (details.value().isMember("keys") && details.value()["keys"].isMember("accessGroup")) {
 							Log("Found Access Group " + dye::light_aqua(details.value()["keys"]["accessGroup"].asString()) + " in " + dye::aqua(newBuild->Id) + " build");
@@ -425,6 +441,8 @@ vector<Build>* UpdateManager::App::GetBuilds(bool enforce)
 
 						for (unsigned int i = 0; i < details.value()["depots"].size(); i++) {
 							auto d = details.value()["depots"][i];
+							if (newBuild->HasDepot(d["name"].asString()))
+								continue;
 							BuildDepot newBuildFile;
 							newBuildFile.Build = newBuild;
 							newBuildFile.Name = d["name"].asString();
@@ -432,8 +450,8 @@ vector<Build>* UpdateManager::App::GetBuilds(bool enforce)
 							newBuildFile.FullPath = buildFolder + to_wstring(newBuild->Id) + L"\\depots\\" + to_wstring(newBuildFile.Name);
 							newBuildFile.UnpackedDir = buildFolder + to_wstring(newBuild->Id) + L"\\unpacked\\" + to_wstring(newBuildFile.Name);
 							newBuildFile.Downloaded = fs::exists(newBuildFile.FullPath);
-							newBuild->Files.push_back(newBuildFile);
-							//break;
+							newBuildFile.OnServer = true;
+							newBuild->Depots.push_back(newBuildFile);
 						}
 					}
 
@@ -449,7 +467,7 @@ vector<Build>* UpdateManager::App::GetBuilds(bool enforce)
 
 vector<BuildDepot>* UpdateManager::Build::GetDepots()
 {
-	return &this->Files;
+	return &this->Depots;
 }
 
 bool UpdateManager::Build::HasDetails()
@@ -459,6 +477,15 @@ bool UpdateManager::Build::HasDetails()
 		this->hasDetailsChecked = true;
 	}
 	return this->hasDetails;
+}
+
+bool UpdateManager::Build::HasDepot(string name)
+{
+	for (auto obj : this->Depots) {
+		if (obj.Name == name)
+			return true;
+	}
+	return false;
 }
 
 void UpdateManager::BuildDepot::DownloadDepot(std::function<bool(uint64_t current, uint64_t total)> callback)
@@ -645,7 +672,6 @@ BuildDepot::UnpackResult UpdateManager::BuildDepot::UnpackDepot(int* progress, i
 			*progress = 0;
 		if (progressMax)
 			*progressMax = JSONData["files"].size();
-
 		for (unsigned int i = 0; i < JSONData["files"].size() || offset < this->DepotSize; i++) {
 			unsigned int fileSize = *(unsigned int*)(this->Depot + offset);
 			offset += sizeof(unsigned int);

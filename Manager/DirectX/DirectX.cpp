@@ -1,4 +1,5 @@
 #include "DirectX.h"
+#include "../Settings.h"
 
 static ID3D11Device* g_pd3dDevice = nullptr;
 static ID3D11DeviceContext* g_pd3dDeviceContext = nullptr;
@@ -99,6 +100,31 @@ void DirectX::CleanupRenderTarget()
 	if (g_mainRenderTargetView) { g_mainRenderTargetView->Release(); g_mainRenderTargetView = nullptr; }
 }
 
+bool DirectX::LoadTextureFromMemory(unsigned char* buffer, size_t bufferSize, ID3D11ShaderResourceView*& out)
+{
+	D3DX11_IMAGE_LOAD_INFO info;
+	ID3DX11ThreadPump* pump{ nullptr };
+
+	if (SUCCEEDED(D3DX11CreateShaderResourceViewFromMemory(g_pd3dDevice, buffer, bufferSize, &info, pump, &out, 0))) {
+		ID3D11Resource* res;
+		D3D11_TEXTURE2D_DESC desc;
+		ID3D11Texture2D* tx2;
+
+		out->GetResource(&res);
+		tx2 = (ID3D11Texture2D*)res;
+		tx2->GetDesc(&desc);
+
+		LoadedImage image;
+		image.FileName = L"";
+		image.LoadedFromMemory = true;
+		image.Width = desc.Width;
+		image.Height = desc.Height;
+		DirectX::LoadedImages[out] = image;
+		return true;
+	}
+	return false;
+}
+
 bool DirectX::LoadTextureFromFile(std::wstring filename, ID3D11ShaderResourceView*& out)
 {
 	D3DX11_IMAGE_LOAD_INFO info;
@@ -119,7 +145,7 @@ bool DirectX::LoadTextureFromFile(std::wstring filename, ID3D11ShaderResourceVie
 		image.Height = desc.Height;
 		DirectX::LoadedImages[out] = image;
 		return true;
-	}	
+	}
 	return false;
 }
 
@@ -201,8 +227,10 @@ void DirectX::Render()
 
 	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-	ImGui::ShowDemoWindow();
-
+#ifdef _DEBUG
+	if (Settings::ShowImGuiDemoWindow)
+		ImGui::ShowDemoWindow();
+#endif
 	ImGuiWindowClass windowClass;
 	//windowClass.ViewportFlagsOverrideSet = ImGuiViewportFlags_TopMost;
 	ImGui::SetNextWindowClass(&windowClass);

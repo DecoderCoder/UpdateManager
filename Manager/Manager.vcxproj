@@ -96,12 +96,16 @@
     <ClCompile Include="DirectX\ImGui\imgui_tables.cpp" />
     <ClCompile Include="DirectX\ImGui\imgui_widgets.cpp" />
     <ClCompile Include="Manager.cpp" />
+    <ClCompile Include="Global.h" />
+    <ClCompile Include="Settings.cpp" />
     <ClCompile Include="UpdateManager\UpdateManager.cpp" />
     <ClCompile Include="UpdateManager\Utils\base64\base64.cpp" />
     <ClCompile Include="UpdateManager\Utils\jsoncpp\jsoncpp.cpp" />
+    <ClCompile Include="Windows\AboutWindow\AboutWindow.cpp" />
     <ClCompile Include="Windows\ImGuiWindow.cpp" />
     <ClCompile Include="Windows\KeyManagerWindow\KeyManagerWindow.cpp" />
     <ClCompile Include="Windows\MainWindow\MainWindow.cpp" />
+    <ClCompile Include="Windows\SettingsWindow\SettingsWindow.cpp" />
     <ClCompile Include="Windows\ViewWindow\ViewWindow.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -111,6 +115,7 @@
     <ClInclude Include="DirectX\D3DX11tex.h" />
     <ClInclude Include="DirectX\DirectX.h" />
     <ClInclude Include="Manager.h" />
+    <ClInclude Include="Settings.h" />
     <ClInclude Include="UpdateManager\UpdateManager.h" />
     <ClInclude Include="UpdateManager\Utils\Base64.hpp" />
     <ClInclude Include="UpdateManager\Utils\base64\base64.h" />
@@ -124,8 +129,10 @@
     <ClInclude Include="Utils\Utils.h" />
     <ClInclude Include="Utils\uuid_v4\endianness.h" />
     <ClInclude Include="Utils\uuid_v4\uuid_v4.h" />
+    <ClInclude Include="Windows\AboutWindow\AboutWindow.h" />
     <ClInclude Include="Windows\KeyManagerWindow\KeyManagerWindow.h" />
     <ClInclude Include="Windows\MainWindow\MainWindow.h" />
+    <ClInclude Include="Windows\SettingsWindow\SettingsWindow.h" />
     <ClInclude Include="Windows\ViewWindow\ViewWindow.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
