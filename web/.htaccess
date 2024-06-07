@@ -16,10 +16,11 @@ RewriteRule pipeline/v2/update/access_groups.json$ /accessGroup.php
 RewriteRule pipeline/v2/update/access_group/(.*?)/key/add/(.*?)/(.*?)$ /accessGroup.php?method=add_key&accessGroup=$1&name=$2&value=$3
 RewriteRule pipeline/v2/update/access_group/add/(.*?)/(.*?)$ /accessGroup.php?method=add&name=$1&value=$2
 
+RewriteRule pipeline/v2/update/app/(.*?)/build/(.*?)/depot/upload/(.*?)$ /depot.php?app=$1&build=$2&name=$3
 RewriteRule pipeline/v2/update/app/(.*?)/build/add/(.*?)$ /build.php?app=$1&id=$2&method=add
 RewriteRule pipeline/v2/update/app/(.*?)/build/remove/(.*?)$ /build.php?app=$1&id=$2&method=remove
 
-RewriteRule depots/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/(.*?).depot$ /depot.php?uuid=$1&filename=$2
+RewriteRule depots/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/(.*?).depot$ /depot.php?uuid=$1&name=$2
 
 <Files "Apache*vhost.conf">
     Require all denied

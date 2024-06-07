@@ -2,9 +2,7 @@
 include('db.php');
 
 $output = [];
-
 $method = $_GET['method'];
-
 $output['accessGroups'] = [];
 
 switch ($method) {

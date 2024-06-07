@@ -25,9 +25,9 @@ if ($buildId == 0) {
     }
 }
 
-$files = $mysql->query('SELECT * FROM `files` WHERE `buildId` = ' . $build['id']);
-if ($files->num_rows == 0)
-    $files = [];
+$depots = $mysql->query('SELECT * FROM `depots` WHERE `buildId` = ' . $build['id']);
+if ($depots->num_rows == 0)
+    $depots = [];
 $output = [];
 
 $output['appId'] = $app['name'];
@@ -36,12 +36,12 @@ $output['channel'] = $channel;
 $output['buildId'] = $buildId;
 $output['depots'] = [];
 
-foreach ($files as $file) {
+foreach ($depots as $file) {
     $depot = [];
     $depot['name'] = basename($file['filename']);
     $depot['size'] = $file['size'];
-    $depot['url'] = '/depots/' . $file['uuid'] . '/' . basename($file['filename']) . '.depot';
-    $depot['mac'] = ""; // sha256 checksum of file
+    $depot['url'] = '/depots/' . $file['uuid'] . '/' . basename($file['filename']).'.depot';
+    $depot['mac'] = $file['sha']; // sha256 checksum of file
     $output['depots'][] = $depot;
 }
 
