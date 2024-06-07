@@ -69,8 +69,8 @@ void processDepotsThread() {
 
 		if (downloadOrUpload)
 		{
-			depot.PackDepot();
-			depot.UploadDepot();
+			if (depot.PackDepot())
+				depot.UploadDepot();
 		}
 		else {
 			depot.DownloadDepot();
@@ -123,7 +123,7 @@ bool openSettings = false;
 void OpenSelected() {
 	auto depots = UpdateManager::GetHosts()->at(selectedHost).GetApps()->at(selectedApp).GetBuilds()->at(selectedBuild).GetDepots();
 	for (int i = 0; i < selectedDepots.size(); i++) {
-		openingBuilds.push_back(&depots->at(i)); // may cause misli
+		openingBuilds.push_back(&depots->at(selectedDepots[i])); // may cause misli
 		DownloadingCount++;
 		CreateThread(NULL, NULL, [](void* data) -> DWORD {
 			UpdateManager::BuildDepot* openingBuild = openingBuilds.back(); // may cause misleading if you click another file faster than CreateThread was called (lol just try)
@@ -574,21 +574,42 @@ bool MainWindow::Render()
 	if (disableAll || disabled)
 		ImGui::BeginDisabled();
 	if (ImGui::Button("Remove depot", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
-
+		ImGui::OpenPopup("Remove Depot##depot");
 	}
 	if (disableAll || disabled)
 		ImGui::EndDisabled();
 
+	if (ImGui::BeginPopupModal("Remove Depot##depot", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) {
+		auto depots = UpdateManager::GetHosts()->at(selectedHost).GetApps()->at(selectedApp).GetBuilds()->at(selectedBuild).GetDepots();
+
+		ImGui::Text(" Are you sure you want to\r\n remove selected depot(s)?");
+		if (ImGui::Button("Remove", ImVec2(100, 0))) {
+			for (auto obj : selectedDepots) {
+				UpdateManager::GetHosts()->at(selectedHost).GetApps()->at(selectedApp).GetBuilds()->at(selectedBuild).RemoveDepot(depots->at(obj).Name);
+			}
+
+			selectedDepots.clear();
+			ImGui::CloseCurrentPopup();
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("Cancel", ImVec2(100, 0))) {
+			ImGui::CloseCurrentPopup();
+		}
+		ImGui::EndPopup();
+	}
+
 	if (ImGui::BeginPopupModal("Add Depot##depot", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) {
 		string inputDepotName = string(inputDepotNameBuffer);
 		ImGui::Text(" Depot Name");
-		ImGui::InputText("##depotname", inputDepotNameBuffer, sizeof(inputDepotNameBuffer), ImGuiInputTextFlags_CharsDecimal);
+		ImGui::InputText("##depotname", inputDepotNameBuffer, sizeof(inputDepotNameBuffer));
 
 		disabled = inputDepotName.size() == 0;
 		if (disabled)
 			ImGui::BeginDisabled();
 		if (ImGui::Button("Add", ImVec2(ImGui::GetContentRegionAvail().x / 2 - ImGui::GetStyle().ItemInnerSpacing.x, 0))) {
 
+			UpdateManager::GetHosts()->at(selectedHost).GetApps()->at(selectedApp).GetBuilds()->at(selectedBuild).AddDepot(inputDepotName);
+			ImGui::CloseCurrentPopup();
 		}
 		if (disabled)
 			ImGui::EndDisabled();
@@ -779,7 +800,7 @@ bool MainWindow::Render()
 		ImGui::EndPopup();
 	}
 	if (ImGui::BeginPopupModal("Remove App##app", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) {
-		ImGui::Text(" Do you want to remove app?");
+		ImGui::Text(" Are you sure you want to remove app?");
 		if (ImGui::Button("Remove", ImVec2(100, 0))) {
 			UpdateManager::GetHosts()->at(selectedHost).RemoveApp(UpdateManager::GetHosts()->at(selectedHost).GetApps()->at(selectedApp).Id);
 			selectedApp = -1;

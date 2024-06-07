@@ -120,7 +120,7 @@ namespace UpdateManager {
 		UnpackResult CheckDepot(bool force = true);
 		UnpackResult UnpackDepot(int* file, int* fileCount, bool force = true);
 		UnpackResult UnpackDepot(bool force = true);
-		void PackDepot();
+		bool PackDepot();
 	};
 
 	class Build {
@@ -138,6 +138,8 @@ namespace UpdateManager {
 
 		bool HasDetails();
 		bool HasDepot(string name);
+		void AddDepot(string name);
+		void RemoveDepot(string name);
 	};
 
 	class App {

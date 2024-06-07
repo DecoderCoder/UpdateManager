@@ -489,6 +489,22 @@ bool UpdateManager::Build::HasDepot(string name)
 	return false;
 }
 
+void UpdateManager::Build::AddDepot(string name)
+{
+	fs::create_directories(GetExecutableFolder().wstring() + L"\\updates\\" + to_wstring(this->App->Host->Uri) + L"\\" + to_wstring(this->App->Id) + L"\\" + to_wstring(this->Id) + L"\\unpacked\\" + to_wstring(name));
+	this->App->GetBuilds(true);
+
+}
+
+void UpdateManager::Build::RemoveDepot(string name)
+{
+	if (fs::exists(GetExecutableFolder().wstring() + L"\\updates\\" + to_wstring(this->App->Host->Uri) + L"\\" + to_wstring(this->App->Id) + L"\\" + to_wstring(this->Id) + L"\\unpacked\\" + to_wstring(name)))
+		fs::remove_all(GetExecutableFolder().wstring() + L"\\updates\\" + to_wstring(this->App->Host->Uri) + L"\\" + to_wstring(this->App->Id) + L"\\" + to_wstring(this->Id) + L"\\unpacked\\" + to_wstring(name));
+
+	this->App->GetBuilds(true);
+	//
+}
+
 void UpdateManager::BuildDepot::UploadDepot()
 {
 	httplib::Client cli("https://" + this->Build->App->Host->Uri);
@@ -732,10 +748,11 @@ BuildDepot::UnpackResult UpdateManager::BuildDepot::UnpackDepot(bool force)
 	return UnpackDepot(nullptr, nullptr, force);
 }
 
-void UpdateManager::BuildDepot::PackDepot()
+bool UpdateManager::BuildDepot::PackDepot()
 {
-	if(!fs::exists(this->UnpackedDir))
-		return;
+	if (!fs::exists(this->UnpackedDir))
+		return false;
+
 	vector<fs::path> files = GetFiles(this->UnpackedDir);
 	vector<string> filesRelative;
 	vector<pair<char*, size_t>> loadedFiles;
@@ -751,6 +768,9 @@ void UpdateManager::BuildDepot::PackDepot()
 		loadedFiles.push_back(make_pair(f, fileSize));
 		filesRelative.push_back(file.string().substr(this->UnpackedDir.size() + 1));
 	}
+
+	if (files.size() == 0)
+		return false;
 
 	Json::Value json;
 	Json::Value jsonFiles;
@@ -768,7 +788,7 @@ void UpdateManager::BuildDepot::PackDepot()
 	this->Depot = (char*)malloc(this->DepotSize);
 	if (!this->Depot) {
 		this->DepotSize = 0;
-		return;
+		return false;
 	}
 
 	size_t offset = 0;
@@ -790,6 +810,7 @@ void UpdateManager::BuildDepot::PackDepot()
 	}
 
 	WriteToFile(this->FullPath, this->Depot, this->DepotSize);
+	return true;
 }
 
 void UpdateManager::KeyManager::LoadKeysFromJSON(UpdateManager::Host* host, Json::Value json)
