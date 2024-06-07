@@ -45,9 +45,38 @@ void ResetDepotAdd() {
 }
 
 const int dotsDelay = 300;
-
 std::pair<char, int> appsDots = make_pair(0, 0);
 std::pair<char, int> buildsDots = make_pair(0, 0);
+
+std::mutex obj;
+std::vector<HANDLE> threads;
+bool downloadOrUpload = false; // false = download | true = upload
+std::vector<UpdateManager::BuildDepot>* processingDepots = nullptr; // depots | left
+
+void processDepotsThread() {
+	while (processingDepots && processingDepots->size() > 0) {
+		BuildDepot depot;
+
+		obj.lock();
+		if (processingDepots->size() == 0)
+		{
+			obj.unlock();
+			break;
+		}
+		depot = processingDepots->at(0);
+		processingDepots->erase(processingDepots->begin());
+		obj.unlock();
+
+		if (downloadOrUpload)
+		{
+			depot.PackDepot();
+			depot.UploadDepot();
+		}
+		else {
+			depot.DownloadDepot();
+		}
+	}
+}
 
 string GetAppsText() {
 	if (selectedHost != -1 && UpdateManager::GetHosts()->at(selectedHost).WaitingGetApps) {
@@ -109,6 +138,8 @@ bool MainWindow::Render()
 	style->AntiAliasedFill = true;
 	style->AntiAliasedLines = true;
 	style->AntiAliasedLinesUseTex = true;
+
+	bool disableAll = false;
 	bool disabled = false;
 
 	ImGui::SetNextWindowSize(ImVec2(1000, 700), ImGuiCond_FirstUseEver);
@@ -126,6 +157,18 @@ bool MainWindow::Render()
 		ImGui::ProgressBar(ImGui::GetTime() * -0.2f);
 	}
 
+	if (processingDepots) {
+		disableAll = true;
+		float count = UpdateManager::GetHosts()->at(selectedHost).GetApps()->at(selectedApp).GetBuilds()->at(selectedBuild).GetDepots()->size();
+
+		ImGui::ProgressBar((count - (float)processingDepots->size()) / (float)count);
+
+		if (processingDepots->size() == 0) {
+			delete(processingDepots);
+			processingDepots = nullptr;
+		}
+	}
+
 
 	if (!Window::Render()) {
 		ImGui::End();
@@ -141,9 +184,13 @@ bool MainWindow::Render()
 	{
 		if (ImGui::BeginMenu(_PROJECTNAME))
 		{
+			if (processingDepots)
+				ImGui::BeginDisabled();
 			if (ImGui::MenuItem("Settings")) {
 				openSettings = true;
 			}
+			if (processingDepots)
+				ImGui::EndDisabled();
 			if (ImGui::MenuItem("Keys Manager")) {
 				KeyManagerWindow* keyManagerWindow = nullptr;
 				for (Window*& obj : DirectX::Windows) {
@@ -202,8 +249,11 @@ bool MainWindow::Render()
 	Build* pSelectedBuild = nullptr;
 
 	ImGui::Columns(3);
+	if (disableAll)
+		ImGui::BeginDisabled();
 	ImGui::Text("Hosts");
 	ImGui::PushItemWidth(-1);
+
 	if (ImGui::BeginListBox("##host")) {
 		for (int i = 0; i < UpdateManager::GetHosts()->size(); i++) {
 			if (ImGui::Selectable(UpdateManager::GetHosts()->at(i).Uri.c_str(), i == selectedHost)) {
@@ -219,15 +269,17 @@ bool MainWindow::Render()
 	if (ImGui::Button("+##host", ImVec2(30, 0))) {
 		ImGui::OpenPopup("Add Host");
 	}
+
 	ImGui::SameLine();
 	// ImGui::SameLine(ImGui::GetContentRegionAvail().x - 30 + ImGui::GetStyle().FramePadding.x + 2);
 	if (ImGui::Button("-##host", ImVec2(30, 0))) {
 		ImGui::OpenPopup("Remove Host##host");
 	}
-
+	if (disableAll)
+		ImGui::EndDisabled();
 	ImGui::NextColumn();
 	disabled = selectedHost == -1 || UpdateManager::GetHosts()->at(selectedHost).WaitingGetApps;
-	if (disabled)
+	if (disableAll || disabled)
 		ImGui::BeginDisabled();
 	ImGui::Text(GetAppsText().c_str());
 	ImGui::PushItemWidth(-1);
@@ -247,28 +299,32 @@ bool MainWindow::Render()
 	}
 
 	//disabled = selectedHost == -1;// || !UpdateManager::GetHosts()->at(selectedHost).IsAdmin;
-	if (disabled && selectedHost != -1 && UpdateManager::GetHosts()->at(selectedHost).IsAdmin)
+	if (disableAll || disabled && selectedHost != -1 && UpdateManager::GetHosts()->at(selectedHost).IsAdmin)
 		ImGui::EndDisabled();
+	if (disableAll)
+		ImGui::BeginDisabled();
 	if (ImGui::Button("+##app", ImVec2(30, 0))) {
 		ImGui::OpenPopup("Add App##app");
 	}
-	if (disabled && selectedHost != -1 && UpdateManager::GetHosts()->at(selectedHost).IsAdmin)
+	if (disableAll)
+		ImGui::EndDisabled();
+	if (disableAll || disabled && selectedHost != -1 && UpdateManager::GetHosts()->at(selectedHost).IsAdmin)
 		ImGui::BeginDisabled();
 	ImGui::SameLine();
-	if (selectedApp != -1 && UpdateManager::GetHosts()->at(selectedHost).GetApps()->at(selectedApp).WaitingGetBuilds)
+	if (disableAll || selectedApp != -1 && UpdateManager::GetHosts()->at(selectedHost).GetApps()->at(selectedApp).WaitingGetBuilds)
 		ImGui::BeginDisabled();
 	if (ImGui::Button("-##app", ImVec2(30, 0))) {
 		ImGui::OpenPopup("Remove App##app");
 	}
-	if (selectedApp != -1 && UpdateManager::GetHosts()->at(selectedHost).GetApps()->at(selectedApp).WaitingGetBuilds)
+	if (disableAll || selectedApp != -1 && UpdateManager::GetHosts()->at(selectedHost).GetApps()->at(selectedApp).WaitingGetBuilds)
 		ImGui::EndDisabled();
-	if (disabled)
+	if (disableAll || disabled)
 		ImGui::EndDisabled();
 
 
 	ImGui::NextColumn();
 	disabled = selectedApp == -1 || UpdateManager::GetHosts()->at(selectedHost).GetApps()->at(selectedApp).WaitingGetBuilds;
-	if (disabled)
+	if (disableAll || disabled)
 		ImGui::BeginDisabled();
 	ImGui::Text(GetBuildsText().c_str());
 	ImGui::PushItemWidth(-1);
@@ -305,11 +361,11 @@ bool MainWindow::Render()
 		}
 		ImGui::EndListBox();
 	}
-	if (disabled)
+	if (disableAll || disabled)
 		ImGui::EndDisabled();
 
 	disabled = selectedApp == -1 || !UpdateManager::GetHosts()->at(selectedHost).IsAdmin;
-	if (disabled)
+	if (disableAll || disabled)
 	{
 		ImGui::BeginDisabled();
 	}
@@ -318,7 +374,7 @@ bool MainWindow::Render()
 		ImGui::OpenPopup("Add Build##build");
 	}
 
-	if (disabled)
+	if (disableAll || disabled)
 	{
 		ImGui::EndDisabled();
 	}
@@ -339,6 +395,8 @@ bool MainWindow::Render()
 	}
 
 	ImGui::PushItemWidth(-1);
+	if (disableAll)
+		ImGui::BeginDisabled();
 	if (ImGui::BeginListBox("##depotslist", ImVec2(0, ImGui::GetContentRegionAvail().y - ImGui::CalcTextSize("abc").y - style->FramePadding.y * 2 - style->ItemSpacing.y))) {
 		if (selectedBuild > -1) {
 			auto build = &UpdateManager::GetHosts()->at(selectedHost).GetApps()->at(selectedApp).GetBuilds()->at(selectedBuild);
@@ -492,18 +550,25 @@ bool MainWindow::Render()
 
 		ImGui::EndListBox();
 	}
-
-	if (selectedBuild == -1)
+	if (disableAll)
+		ImGui::EndDisabled();
+	if (disableAll || selectedBuild == -1)
 		ImGui::BeginDisabled();
 	if (ImGui::Button("Add depot", ImVec2(ImGui::GetContentRegionAvail().x / 2 - style->FramePadding.x, 0))) {
 		ImGui::OpenPopup("Add Depot##depot");
 	}
-	if (selectedBuild == -1)
+	if (disableAll || selectedBuild == -1)
 		ImGui::EndDisabled();
 	ImGui::SameLine();
+
+	disabled = !selectedDepot.size();
+	if (disableAll || disabled)
+		ImGui::BeginDisabled();
 	if (ImGui::Button("Remove depot", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
 
 	}
+	if (disableAll || disabled)
+		ImGui::EndDisabled();
 
 	if (ImGui::BeginPopupModal("Add Depot##depot", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) {
 		string inputDepotName = string(inputDepotNameBuffer);
@@ -531,24 +596,38 @@ bool MainWindow::Render()
 
 	ImGui::Spacing();
 
-	if (selectedBuild == -1)
+	if (disableAll || selectedBuild == -1)
 		ImGui::BeginDisabled();
-	ImGui::Button("Download all", ImVec2(ImGui::GetContentRegionAvail().x / 3 - style->FramePadding.x, 0));
-	if (selectedBuild == -1)
+
+	if (ImGui::Button("Download all", ImVec2(ImGui::GetContentRegionAvail().x / 3 - style->FramePadding.x, 0))) {
+		downloadOrUpload = false;
+		auto depots = new std::vector<UpdateManager::BuildDepot>(*UpdateManager::GetHosts()->at(selectedHost).GetApps()->at(selectedApp).GetBuilds()->at(selectedBuild).GetDepots());
+
+		processingDepots = depots;
+
+		for (int i = 0; i < min(depots->size(), Settings::ThreadsCount); i++) {
+			threads.push_back(CreateThread(0, 0, (LPTHREAD_START_ROUTINE)processDepotsThread, 0, 0, 0));
+		}
+	}
+
+	if (disableAll || selectedBuild == -1)
 		ImGui::EndDisabled();
 	ImGui::SameLine();
 	disabled = selectedBuild == -1 || !UpdateManager::GetHosts()->at(selectedHost).IsAdmin;
-	if (disabled)
+	if (disableAll || disabled)
 		ImGui::BeginDisabled();
 	if (ImGui::Button("Upload all", ImVec2(ImGui::GetContentRegionAvail().x / 2 - style->FramePadding.x, 0)))
 	{
-		auto depots = UpdateManager::GetHosts()->at(selectedHost).GetApps()->at(selectedApp).GetBuilds()->at(selectedBuild).GetDepots();
-		for (int i = 0; i < depots->size(); i++) {
-			depots->at(i).PackDepot();
-			depots->at(i).UploadDepot();
+		downloadOrUpload = true;
+		auto depots = new std::vector<UpdateManager::BuildDepot>(*UpdateManager::GetHosts()->at(selectedHost).GetApps()->at(selectedApp).GetBuilds()->at(selectedBuild).GetDepots());
+
+		processingDepots = depots;
+
+		for (int i = 0; i < min(depots->size(), Settings::ThreadsCount); i++) {
+			threads.push_back(CreateThread(0, 0, (LPTHREAD_START_ROUTINE)processDepotsThread, 0, 0, 0));
 		}
 	}
-	if (disabled)
+	if (disableAll || disabled)
 		ImGui::EndDisabled();
 	ImGui::SameLine();
 	ImGui::Button("Open", ImVec2(ImGui::GetContentRegionAvail().x, 0));
@@ -568,7 +647,7 @@ bool MainWindow::Render()
 
 		ImGui::BeginChild("Admin#settings", ImVec2(ImGui::GetContentRegionAvail().x, 0), ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_AlwaysAutoResize | ImGuiChildFlags_Border);
 
-		ImGui::Checkbox("Ask about downloading actual version", &Settings::Admin::AskDownloadNew);
+		//ImGui::Checkbox("Ask about downloading actual version", &Settings::Admin::AskDownloadNew);
 
 		ImGui::EndChild();
 

@@ -734,6 +734,8 @@ BuildDepot::UnpackResult UpdateManager::BuildDepot::UnpackDepot(bool force)
 
 void UpdateManager::BuildDepot::PackDepot()
 {
+	if(!fs::exists(this->UnpackedDir))
+		return;
 	vector<fs::path> files = GetFiles(this->UnpackedDir);
 	vector<string> filesRelative;
 	vector<pair<char*, size_t>> loadedFiles;
