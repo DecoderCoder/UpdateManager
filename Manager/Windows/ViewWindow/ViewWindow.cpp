@@ -68,8 +68,8 @@ void ViewWindow::ParseFiles(wstring path, DirectoryNode* parentNode) {
 			if (*(BuildDepot::DFileType*)loadedFile->Binary == BuildDepot::DFileType::Encrypted || *(BuildDepot::DFileType*)loadedFile->Binary == BuildDepot::DFileType::EncryptedFile)
 				loadedFile->FileType = LoadedFileType::Encrypted;
 			//if (loadedFile->BinarySize < 1 * 1024 * 1024) {
-				loadedFile->Text = string(loadedFile->Binary, loadedFile->BinarySize);
-				loadedFile->BinaryHex = ToHex(loadedFile->Binary, loadedFile->BinarySize, true);
+			loadedFile->Text = string(loadedFile->Binary, loadedFile->BinarySize);
+			loadedFile->BinaryHex = ToHex(loadedFile->Binary, loadedFile->BinarySize, true);
 			//}
 
 

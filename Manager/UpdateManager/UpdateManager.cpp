@@ -423,6 +423,7 @@ vector<Build>* UpdateManager::App::GetBuilds(bool enforce)
 								newBuildFile.Build = newBuild;
 								newBuildFile.Name = obj2.path().filename().string();
 								newBuildFile.Url = "";
+								newBuildFile.FullPath = buildFolder + to_wstring(newBuild->Id) + L"\\depots\\" + to_wstring(newBuildFile.Name);
 
 								newBuildFile.UnpackedDir = obj2.path().wstring();
 								newBuildFile.OnServer = false;
@@ -488,6 +489,17 @@ bool UpdateManager::Build::HasDepot(string name)
 	return false;
 }
 
+void UpdateManager::BuildDepot::UploadDepot()
+{
+	httplib::Client cli("https://" + this->Build->App->Host->Uri);
+	string auth = this->Build->App->Host->Login + ":" + this->Build->App->Host->Password;
+	httplib::Headers headers = {
+{ "Authorization",  base64_encode((const BYTE*)auth.data(), auth.size())}
+	};
+	httplib::Result res = cli.Post("/pipeline/v2/update/app/" + this->Build->App->Id + "/build/" + this->Build->Id + "/depot/upload/" + this->Name, headers, "depot=" + base64_encode((BYTE*)this->Depot, this->DepotSize), "application/x-www-form-urlencoded");
+}
+
+
 void UpdateManager::BuildDepot::DownloadDepot(std::function<bool(uint64_t current, uint64_t total)> callback)
 {
 	Log("Downloading file " + this->Name);
@@ -522,6 +534,11 @@ BuildDepot::LoadResult UpdateManager::BuildDepot::LoadDepot(bool force)
 	size_t depotSize = fs::file_size(this->FullPath);
 	this->Depot = (char*)malloc(depotSize);
 	this->DepotSize = depotSize;
+	if (this->DepotSize == 0) {
+		Log("Failed to load file " + this->Name + ", Error: Depot file is empty");
+		this->lastLoadResult = LoadResult::UnknownError;
+		return LoadResult::UnknownError;
+	}
 	if (this->Depot == nullptr)
 	{
 		//free(this->Depot);
@@ -717,7 +734,60 @@ BuildDepot::UnpackResult UpdateManager::BuildDepot::UnpackDepot(bool force)
 
 void UpdateManager::BuildDepot::PackDepot()
 {
+	vector<fs::path> files = GetFiles(this->UnpackedDir);
+	vector<string> filesRelative;
+	vector<pair<char*, size_t>> loadedFiles;
 
+	size_t allSize = 0;
+
+	for (auto file : files) {
+		char* f = nullptr;
+		size_t fileSize = 0;
+		ReadBinaryFile(file.wstring(), &f, fileSize);
+		allSize += 4;
+		allSize += fileSize;
+		loadedFiles.push_back(make_pair(f, fileSize));
+		filesRelative.push_back(file.string().substr(this->UnpackedDir.size() + 1));
+	}
+
+	Json::Value json;
+	Json::Value jsonFiles;
+	for (int i = 0; i < files.size(); i++) {
+		Json::Value jsonFile;
+		jsonFile["name"] = filesRelative[i];
+		jsonFile["mode"] = 33188;
+		jsonFiles[i] = jsonFile;
+	}
+	json["files"] = jsonFiles;
+	string jsonString = json.toStyledString();
+
+	free(this->Depot);
+	this->DepotSize = 8 + jsonString.size() + allSize;
+	this->Depot = (char*)malloc(this->DepotSize);
+	if (!this->Depot) {
+		this->DepotSize = 0;
+		return;
+	}
+
+	size_t offset = 0;
+	*((BuildDepot::DFileType*)(this->Depot + offset)) = BuildDepot::DFileType::Default; // this->FileType
+	offset += sizeof(BuildDepot::DFileType);
+
+	*((unsigned int*)(this->Depot + offset)) = jsonString.size();
+	offset += sizeof(unsigned int);
+	jsonString.copy((char*)(this->Depot + offset), jsonString.size(), 0);
+	offset += jsonString.size();
+
+	for (int i = 0; i < files.size(); i++) {
+		*((unsigned int*)(this->Depot + offset)) = loadedFiles[i].second;
+		*((unsigned int*)(this->Depot + offset)) = (unsigned int)loadedFiles[i].second;
+		*((int*)(this->Depot + offset)) = loadedFiles[i].second;
+		offset += sizeof(unsigned int);
+		memcpy(this->Depot + offset, loadedFiles[i].first, loadedFiles[i].second);
+		offset += loadedFiles[i].second;
+	}
+
+	WriteToFile(this->FullPath, this->Depot, this->DepotSize);
 }
 
 void UpdateManager::KeyManager::LoadKeysFromJSON(UpdateManager::Host* host, Json::Value json)

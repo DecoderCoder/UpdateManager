@@ -7,6 +7,7 @@ char inputAdminLoginBuffer[256] = { 0 };
 char inputAdminPasswordBuffer[256] = { 0 };
 char inputAppNameBuffer[256] = { 0 };
 char inputBuildNameBuffer[256] = { 0 };
+char inputDepotNameBuffer[256] = { 0 };
 string comboBoxAppAccessGroup;
 
 int selectedHost = -1;
@@ -37,6 +38,10 @@ void ResetAddApp() {
 void ResetBuildAdd() {
 	memset(inputBuildNameBuffer, 0, sizeof(inputBuildNameBuffer));
 	comboBoxAppAccessGroup = "";
+}
+
+void ResetDepotAdd() {
+	memset(inputDepotNameBuffer, 0, sizeof(inputDepotNameBuffer));
 }
 
 const int dotsDelay = 300;
@@ -99,7 +104,7 @@ bool MainWindow::Render()
 		style->FrameBorderSize = 1;
 	}
 
-	
+
 	style->WindowTitleAlign = ImVec2(0.5f, 0.5f);
 	style->AntiAliasedFill = true;
 	style->AntiAliasedLines = true;
@@ -488,13 +493,40 @@ bool MainWindow::Render()
 		ImGui::EndListBox();
 	}
 
+	if (selectedBuild == -1)
+		ImGui::BeginDisabled();
 	if (ImGui::Button("Add depot", ImVec2(ImGui::GetContentRegionAvail().x / 2 - style->FramePadding.x, 0))) {
-
+		ImGui::OpenPopup("Add Depot##depot");
 	}
+	if (selectedBuild == -1)
+		ImGui::EndDisabled();
 	ImGui::SameLine();
 	if (ImGui::Button("Remove depot", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
 
 	}
+
+	if (ImGui::BeginPopupModal("Add Depot##depot", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) {
+		string inputDepotName = string(inputDepotNameBuffer);
+		ImGui::Text(" Depot Name");
+		ImGui::InputText("##depotname", inputDepotNameBuffer, sizeof(inputDepotNameBuffer), ImGuiInputTextFlags_CharsDecimal);
+
+		disabled = inputDepotName.size() == 0;
+		if (disabled)
+			ImGui::BeginDisabled();
+		if (ImGui::Button("Add", ImVec2(ImGui::GetContentRegionAvail().x / 2 - ImGui::GetStyle().ItemInnerSpacing.x, 0))) {
+
+		}
+		if (disabled)
+			ImGui::EndDisabled();
+		ImGui::SameLine();
+		if (ImGui::Button("Cancel", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
+			ResetDepotAdd();
+			ImGui::CloseCurrentPopup();
+		}
+
+		ImGui::EndPopup();
+	}
+
 	ImGui::EndChild();
 
 	ImGui::Spacing();
@@ -508,7 +540,14 @@ bool MainWindow::Render()
 	disabled = selectedBuild == -1 || !UpdateManager::GetHosts()->at(selectedHost).IsAdmin;
 	if (disabled)
 		ImGui::BeginDisabled();
-	ImGui::Button("Upload all", ImVec2(ImGui::GetContentRegionAvail().x / 2 - style->FramePadding.x, 0));
+	if (ImGui::Button("Upload all", ImVec2(ImGui::GetContentRegionAvail().x / 2 - style->FramePadding.x, 0)))
+	{
+		auto depots = UpdateManager::GetHosts()->at(selectedHost).GetApps()->at(selectedApp).GetBuilds()->at(selectedBuild).GetDepots();
+		for (int i = 0; i < depots->size(); i++) {
+			depots->at(i).PackDepot();
+			depots->at(i).UploadDepot();
+		}
+	}
 	if (disabled)
 		ImGui::EndDisabled();
 	ImGui::SameLine();
@@ -518,7 +557,9 @@ bool MainWindow::Render()
 	//ImGui::SetNextWindowSize(ImVec2(1000, 700), ImGuiCond_FirstUseEver);
 	if (ImGui::BeginPopupModal("Settings##mainwindow", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) {
 		ImGui::Checkbox("Dark Mode", &Settings::DarkMode);
+		ImGui::BeginDisabled();
 		ImGui::Checkbox("Use SSL", &Settings::UseSSL);
+		ImGui::EndDisabled();
 		ImGui::SliderInt("Threads count", &Settings::ThreadsCount, 1, 32);
 
 #ifdef _DEBUG
@@ -663,7 +704,11 @@ bool MainWindow::Render()
 		ImGui::Text(" Host");
 		ImGui::InputText("##hostinput", inputHostNameBuffer, sizeof(inputHostNameBuffer));
 		{
-			auto depotsText = "Use only SSL protoctol";
+			const char* depotsText;
+			if (Settings::UseSSL)
+				depotsText = "Use only SSL protoctol";
+			else
+				depotsText = " ";
 			auto windowWidth = ImGui::GetContentRegionAvail().x;
 			auto textWidth = ImGui::CalcTextSize(depotsText).x;
 

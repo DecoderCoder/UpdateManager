@@ -6,7 +6,7 @@ bool AboutWindow::Render()
 	ImGui::SetNextWindowSize(ImVec2(860, 565));
 	if (Settings::DarkMode)
 		ImGui::PushStyleColor(ImGuiCol_TitleBgActive, ImVec4(0.059, 0.059, 0.059, 1.f));
-	ImGui::Begin("About", &this->Opened, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoDocking);
+	ImGui::Begin("About creator", &this->Opened, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoDocking);
 	if (Settings::DarkMode)
 		ImGui::PopStyleColor();
 	if (!Window::Render()) {

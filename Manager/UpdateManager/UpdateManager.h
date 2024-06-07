@@ -112,6 +112,7 @@ namespace UpdateManager {
 		bool Downloaded;
 		bool OnServer;
 
+		void UploadDepot();
 		void DownloadDepot(std::function<bool(uint64_t current, uint64_t total)> callback = nullptr);
 		LoadResult LoadDepot(bool force = true);
 		void UnloadDepot();
@@ -119,7 +120,6 @@ namespace UpdateManager {
 		UnpackResult CheckDepot(bool force = true);
 		UnpackResult UnpackDepot(int* file, int* fileCount, bool force = true);
 		UnpackResult UnpackDepot(bool force = true);
-
 		void PackDepot();
 	};
 

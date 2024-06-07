@@ -14,7 +14,9 @@ void Settings::LoadSettings()
 		Settings::DarkMode = r.Get<bool>("settings", "dark_mode", true);
 		Settings::ThreadsCount = r.Get<int>("settings", "threads_count", 1);
 		Settings::AlwaysUnpackDepot = r.Get<bool>("settings", "always_unpack", true);
+#ifdef _DEBUG
 		Settings::ShowImGuiDemoWindow = r.Get<bool>("settings", "show_demo", true);
+#endif
 		Settings::Admin::AskDownloadNew = r.Get<bool>("settings", "ask_download", true);
 	}
 }

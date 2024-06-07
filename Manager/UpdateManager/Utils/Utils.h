@@ -97,3 +97,18 @@ static void OpenFolder(std::wstring folder) {
 	std::vector<std::wstring> empty;
 	OpenFolder(folder, empty);
 }
+
+static std::vector<std::filesystem::path> GetFiles(wstring path) {
+	std::vector<std::filesystem::path> result;
+
+	for (auto obj : std::filesystem::directory_iterator(path)) {
+		if (std::filesystem::is_directory(obj)) {
+			for (auto obj2 : GetFiles(obj.path().wstring())) {
+				result.push_back(obj2);
+			}
+		}
+		result.push_back(obj.path());
+	}
+
+	return result;
+}

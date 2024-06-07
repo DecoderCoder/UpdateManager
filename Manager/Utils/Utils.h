@@ -1,6 +1,7 @@
 #pragma once
 #include <string>
 #include <vector>
+#include <filesystem>
 
 namespace Utils {
 	static bool IsUUID(std::string str) {

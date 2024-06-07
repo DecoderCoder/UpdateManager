@@ -105,7 +105,6 @@
     <ClCompile Include="Windows\ImGuiWindow.cpp" />
     <ClCompile Include="Windows\KeyManagerWindow\KeyManagerWindow.cpp" />
     <ClCompile Include="Windows\MainWindow\MainWindow.cpp" />
-    <ClCompile Include="Windows\SettingsWindow\SettingsWindow.cpp" />
     <ClCompile Include="Windows\ViewWindow\ViewWindow.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -115,6 +114,7 @@
     <ClInclude Include="DirectX\D3DX11tex.h" />
     <ClInclude Include="DirectX\DirectX.h" />
     <ClInclude Include="Manager.h" />
+    <ClInclude Include="resource.h" />
     <ClInclude Include="Settings.h" />
     <ClInclude Include="UpdateManager\UpdateManager.h" />
     <ClInclude Include="UpdateManager\Utils\Base64.hpp" />
@@ -132,8 +132,13 @@
     <ClInclude Include="Windows\AboutWindow\AboutWindow.h" />
     <ClInclude Include="Windows\KeyManagerWindow\KeyManagerWindow.h" />
     <ClInclude Include="Windows\MainWindow\MainWindow.h" />
-    <ClInclude Include="Windows\SettingsWindow\SettingsWindow.h" />
     <ClInclude Include="Windows\ViewWindow\ViewWindow.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="Manager.rc" />
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="Resources\icon.ico" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

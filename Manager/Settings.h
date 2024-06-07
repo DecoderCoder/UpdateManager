@@ -13,6 +13,8 @@ namespace Settings {
 
 #ifdef _DEBUG
 	inline bool ShowImGuiDemoWindow = true;
+#else
+	inline bool ShowImGuiDemoWindow = false;
 #endif
 
 	void LoadSettings();
