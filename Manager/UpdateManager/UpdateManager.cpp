@@ -496,7 +496,7 @@ void UpdateManager::BuildDepot::UploadDepot()
 	httplib::Headers headers = {
 { "Authorization",  base64_encode((const BYTE*)auth.data(), auth.size())}
 	};
-	httplib::Result res = cli.Post("/pipeline/v2/update/app/" + this->Build->App->Id + "/build/" + this->Build->Id + "/depot/upload/" + this->Name, headers, "depot=" + base64_encode((BYTE*)this->Depot, this->DepotSize), "application/x-www-form-urlencoded");
+	httplib::Result res = cli.Post("/pipeline/v2/update/app/" + this->Build->App->Id + "/build/" + this->Build->Id + "/depot/upload/" + this->Name, headers, "depot=" + url_encode(base64_encode((BYTE*)this->Depot, this->DepotSize)), "application/x-www-form-urlencoded");
 }
 
 
