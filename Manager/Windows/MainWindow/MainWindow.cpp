@@ -13,7 +13,7 @@ string comboBoxAppAccessGroup;
 int selectedHost = -1;
 int selectedApp = -1;
 int selectedBuild = -1;
-std::vector<int> selectedDepot;
+std::vector<int> selectedDepots;
 
 int DownloadingCount;
 std::map<UpdateManager::BuildDepot*, std::pair<int, int>> UnpackingProgresses; // Build > (Progress, MaxProgress)
@@ -119,6 +119,44 @@ string GetBuildsText() {
 }
 
 bool openSettings = false;
+
+void OpenSelected() {
+	auto depots = UpdateManager::GetHosts()->at(selectedHost).GetApps()->at(selectedApp).GetBuilds()->at(selectedBuild).GetDepots();
+	for (int i = 0; i < selectedDepots.size(); i++) {
+		openingBuilds.push_back(&depots->at(i)); // may cause misli
+		DownloadingCount++;
+		CreateThread(NULL, NULL, [](void* data) -> DWORD {
+			UpdateManager::BuildDepot* openingBuild = openingBuilds.back(); // may cause misleading if you click another file faster than CreateThread was called (lol just try)
+
+			if (!openingBuild->Downloaded && openingBuild->OnServer)
+				openingBuild->DownloadDepot();
+			DownloadingCount--;
+			ViewWindow* openedWindow = nullptr;
+			for (Window*& obj : DirectX::Windows) {
+				ViewWindow* view = (ViewWindow*)obj;
+				if (view->GetBuildDepot() == openingBuild) {
+					openedWindow = view;
+					break;
+				}
+			}
+			if (!openedWindow) {
+				UnpackingProgresses[openingBuild] = make_pair(0, 1);
+				if (!openingBuild->OnServer || openingBuild->UnpackDepot(&UnpackingProgresses[openingBuild].first, &UnpackingProgresses[openingBuild].second) == BuildDepot::UnpackResult::Success) {
+					ViewWindow* window = new ViewWindow(openingBuild);
+					window->SetDock(dockId);
+				}
+				UnpackingProgresses.erase(UnpackingProgresses.find(openingBuild));
+				openingBuilds.erase(std::find(openingBuilds.begin(), openingBuilds.end(), openingBuild));
+
+				return 0;
+
+			}
+			else {
+				openedWindow->Show();
+			}
+			}, NULL, NULL, NULL);
+	}
+}
 
 bool MainWindow::Render()
 {
@@ -233,12 +271,14 @@ bool MainWindow::Render()
 		}
 		if (selectedApp < 0)
 			ImGui::BeginDisabled();
-		//if (ImGui::BeginMenu("Build")) {
+		if (ImGui::BeginMenu("App")) {
 
-		//	//ImGui::MenuItem("View keys");
+			if (ImGui::MenuItem("Build updater")) {
 
-		//	ImGui::EndMenu();
-		//}
+			}
+
+			ImGui::EndMenu();
+		}
 		if (selectedApp < 0)
 			ImGui::EndDisabled();
 		ImGui::EndMenuBar();
@@ -260,7 +300,7 @@ bool MainWindow::Render()
 				selectedHost = i;
 				selectedApp = -1;
 				selectedBuild = -1;
-				selectedDepot.clear();
+				selectedDepots.clear();
 			}
 		}
 
@@ -290,7 +330,7 @@ bool MainWindow::Render()
 				if (ImGui::Selectable(apps->at(i).Id.c_str(), i == selectedApp)) {
 					selectedApp = i;
 					selectedBuild = -1;
-					selectedDepot.clear();
+					selectedDepots.clear();
 				}
 			}
 		}
@@ -338,7 +378,7 @@ bool MainWindow::Render()
 						ImGui::BeginDisabled();
 				if (ImGui::Selectable(build->Id.c_str(), i == selectedBuild)) {
 					selectedBuild = i;
-					selectedDepot.clear();
+					selectedDepots.clear();
 				}
 				const char* statusText;
 				if (build->LastBuild) {
@@ -413,17 +453,18 @@ bool MainWindow::Render()
 					ImGui::BeginDisabled();
 				}
 
-				if (ImGui::Selectable(depot->Name.c_str(), std::find(selectedDepot.begin(), selectedDepot.end(), i) != selectedDepot.end()))
+				if (ImGui::Selectable(depot->Name.c_str(), std::find(selectedDepots.begin(), selectedDepots.end(), i) != selectedDepots.end()))
 				{
-					if (GetAsyncKeyState(VK_CONTROL)) {
-						if (std::find(selectedDepot.begin(), selectedDepot.end(), i) != selectedDepot.end())
-							selectedDepot.erase(std::find(selectedDepot.begin(), selectedDepot.end(), i));
-						else
-							selectedDepot.push_back(i);
-					}
-					else {
-						selectedDepot.clear();
-						selectedDepot.push_back(i);
+					//if (GetAsyncKeyState(VK_CONTROL)) { // remove it 
+					//	if (std::find(selectedDepots.begin(), selectedDepots.end(), i) != selectedDepots.end())
+					//		selectedDepots.erase(std::find(selectedDepots.begin(), selectedDepots.end(), i));
+					//	else
+					//		selectedDepots.push_back(i);
+					//}
+					//else 
+					{
+						selectedDepots.clear();
+						selectedDepots.push_back(i);
 					}
 				}
 
@@ -483,39 +524,7 @@ bool MainWindow::Render()
 				if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0))
 				{
 					// Do stuff on Selectable() double click.
-					openingBuilds.push_back(depot); // may cause misli
-
-					DownloadingCount++;
-					CreateThread(NULL, NULL, [](void* data) -> DWORD {
-						UpdateManager::BuildDepot* openingBuild = openingBuilds.back(); // may cause misleading if you click another file faster than CreateThread was called (lol just try)
-
-						if (!openingBuild->Downloaded && openingBuild->OnServer)
-							openingBuild->DownloadDepot();
-						DownloadingCount--;
-						ViewWindow* openedWindow = nullptr;
-						for (Window*& obj : DirectX::Windows) {
-							ViewWindow* view = (ViewWindow*)obj;
-							if (view->GetBuildDepot() == openingBuild) {
-								openedWindow = view;
-								break;
-							}
-						}
-						if (!openedWindow) {
-							UnpackingProgresses[openingBuild] = make_pair(0, 1);
-							if (!openingBuild->OnServer || openingBuild->UnpackDepot(&UnpackingProgresses[openingBuild].first, &UnpackingProgresses[openingBuild].second) == BuildDepot::UnpackResult::Success) {
-								ViewWindow* window = new ViewWindow(openingBuild);
-								window->SetDock(dockId);
-							}
-							UnpackingProgresses.erase(UnpackingProgresses.find(openingBuild));
-							openingBuilds.erase(std::find(openingBuilds.begin(), openingBuilds.end(), openingBuild));
-
-							return 0;
-
-						}
-						else {
-							openedWindow->Show();
-						}
-						}, NULL, NULL, NULL);
+					OpenSelected();
 				}
 
 
@@ -561,7 +570,7 @@ bool MainWindow::Render()
 		ImGui::EndDisabled();
 	ImGui::SameLine();
 
-	disabled = !selectedDepot.size();
+	disabled = !selectedDepots.size();
 	if (disableAll || disabled)
 		ImGui::BeginDisabled();
 	if (ImGui::Button("Remove depot", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
@@ -630,7 +639,13 @@ bool MainWindow::Render()
 	if (disableAll || disabled)
 		ImGui::EndDisabled();
 	ImGui::SameLine();
-	ImGui::Button("Open", ImVec2(ImGui::GetContentRegionAvail().x, 0));
+	if (disableAll)
+		ImGui::BeginDisabled();
+	if (ImGui::Button("Open", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
+		OpenSelected();
+	}
+	if (disableAll)
+		ImGui::EndDisabled();
 	ImGui::Spacing();
 
 	//ImGui::SetNextWindowSize(ImVec2(1000, 700), ImGuiCond_FirstUseEver);
@@ -769,7 +784,7 @@ bool MainWindow::Render()
 			UpdateManager::GetHosts()->at(selectedHost).RemoveApp(UpdateManager::GetHosts()->at(selectedHost).GetApps()->at(selectedApp).Id);
 			selectedApp = -1;
 			selectedBuild = -1;
-			selectedDepot.clear();
+			selectedDepots.clear();
 			ImGui::CloseCurrentPopup();
 		}
 		ImGui::SameLine();
@@ -861,7 +876,7 @@ bool MainWindow::Render()
 			selectedHost = -1;
 			selectedApp = -1;
 			selectedBuild = -1;
-			selectedDepot.clear();
+			selectedDepots.clear();
 			ImGui::CloseCurrentPopup();
 		}
 		ImGui::SameLine();
