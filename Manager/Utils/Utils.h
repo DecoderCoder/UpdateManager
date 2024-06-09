@@ -30,4 +30,24 @@ namespace Utils {
 		}
 		return result;
 	}
+
+	static string SizeToString(size_t size) {
+		string res;
+		if (size > 1024 * 1024) {
+			res = to_string((float)size / 1024 / 1024);
+			if (res.find('.') != string::npos)
+				res = res.substr(0, res.find('.') + 3);
+			res += " MB";
+		}
+		else if (size > 1024) {
+			res = to_string((float)size / 1024);
+			if (res.find('.') != string::npos)
+				res = res.substr(0, res.find('.') + 3);
+			res += " KB";
+		}
+		else {
+			res = to_string(size) + " B";
+		}
+		return res;
+	}
 }

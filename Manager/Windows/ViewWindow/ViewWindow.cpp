@@ -39,6 +39,7 @@ void ViewWindow::ParseFiles(wstring path, DirectoryNode* parentNode) {
 			parentNode->Children.push_back(newNode);
 		}
 		else {
+			FilesCount++;
 			LoadedFile* loadedFile = new LoadedFile(); // memory leak, but idc ;D
 			loadedFile->FullPath = objPath.wstring();
 
@@ -68,16 +69,17 @@ void ViewWindow::ParseFiles(wstring path, DirectoryNode* parentNode) {
 			if (*(BuildDepot::DFileType*)loadedFile->Binary == BuildDepot::DFileType::Encrypted || *(BuildDepot::DFileType*)loadedFile->Binary == BuildDepot::DFileType::EncryptedFile)
 				loadedFile->FileType = LoadedFileType::Encrypted;
 			//if (loadedFile->BinarySize < 1 * 1024 * 1024) {
-			loadedFile->Text = string(loadedFile->Binary, loadedFile->BinarySize);
-			loadedFile->BinaryHex = ToHex(loadedFile->Binary, loadedFile->BinarySize, true);
+			if (!Settings::LowRAM) {
+				loadedFile->Text = string(loadedFile->Binary, loadedFile->BinarySize);
+				loadedFile->BinaryHex = ToHex2(loadedFile->Binary, loadedFile->BinarySize, true);
+				DirectX::LoadTextureFromFile(loadedFile->FullPath, loadedFile->Image);
+			}
+
 			//}
 
 
-
-			auto a = *(int*)loadedFile->Text.data() & (int)BuildDepot::DFileType::Encrypted | (int)BuildDepot::DFileType::EncryptedFile;
-
 			//if (loadedFile->FileType == LoadedFileType::Image) {
-			DirectX::LoadTextureFromFile(loadedFile->FullPath, loadedFile->Image);
+
 			//}
 
 			newNode->LoadedFile = loadedFile;
@@ -114,11 +116,14 @@ ViewWindow::ViewWindow(wstring buildFilePath, UpdateManager::Build* build) : Win
 
 
 	if (bFile->UnpackDepot() == UpdateManager::BuildDepot::UnpackResult::Success) {
+		auto before = std::chrono::system_clock::now();
 		this->buildFile = bFile;
 		this->windowName = "View [" + this->buildFile->Name + "]";
 		parsingFiles = true;
 		ParseFiles(this->buildFile->UnpackedDir, &depotFiles);
 		parsingFiles = false;
+
+		Log("File opened in " + to_string(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - before).count()) + " milliseconds");
 	}
 }
 
@@ -127,7 +132,9 @@ ViewWindow::ViewWindow(BuildDepot* b) : Window()
 	this->buildFile = b;
 	this->windowName = "View [" + this->buildFile->Name + "]";
 	parsingFiles = true;
+	auto before = std::chrono::system_clock::now();
 	ParseFiles(this->buildFile->UnpackedDir, &depotFiles);
+	Log("File opened in " + to_string(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - before).count()) + " milliseconds");
 	parsingFiles = false;
 	selectedChanged = false;
 }
@@ -168,6 +175,9 @@ void ViewWindow::RenderFileTree(DirectoryNode* node) {
 				selectedFile = node->Children.at(i);
 				selectedChanged = true;
 			}
+			string size = Utils::SizeToString(obj->LoadedFile->BinarySize);
+			ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - ImGui::CalcTextSize(size.c_str()).x - 20);
+			ImGui::TextDisabled(size.c_str());
 		}
 	}
 	if (node == &this->depotFiles)
@@ -252,6 +262,41 @@ bool ViewWindow::Render()
 		ImGui::EndMenuBar();
 	}
 
+	if (!this->buildFile->Build->App->Host->IsAdmin)
+		ImGui::BeginDisabled();
+	ImGui::BeginChild("##depotinfo", ImVec2(ImGui::GetContentRegionAvail().x, 0), ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_AlwaysAutoResize | ImGuiChildFlags_Border);
+
+	ImGui::Text(("Depot name  : " + this->buildFile->Name).c_str());
+
+
+	ImGui::Text(("Depot size  : " + Utils::SizeToString(this->buildFile->DepotSize)).c_str());
+	ImGui::Text(("Files count : " + to_string(this->FilesCount)).c_str());
+
+	ImGui::Text(("File Type   :" + string(this->buildFile->Key.IsValid() ? "Encrypted" : "Default")).c_str());
+
+	ImGui::Text("Key");
+	ImGui::SameLine();
+
+
+	if (ImGui::BeginCombo("##selectfiletype", this->buildFile->Key.Name.c_str())) {
+		auto app = this->buildFile->Build->App;
+
+		if (ImGui::Selectable("##emptykey")) {
+			this->buildFile->Key = UpdateManager::KeyManager::EmptyKey;
+		}
+
+		for (int i = 0; i < app->AccessGroup->Keys.size(); i++) {
+			if (ImGui::Selectable(app->AccessGroup->Keys[i].Name.c_str())) {
+				this->buildFile->Key = app->AccessGroup->Keys[i];
+			}
+		}
+
+		ImGui::EndCombo();
+	}
+
+	ImGui::EndChild();
+	if (!this->buildFile->Build->App->Host->IsAdmin)
+		ImGui::EndDisabled();
 
 	ImGui::Columns(2);
 	/*ImGui::SetNextItemWidth(-1);
@@ -285,7 +330,8 @@ bool ViewWindow::Render()
 				ImGui::SetNextWindowFocus();
 			}
 			ImGui::Begin(("Text##textTab_" + buildFile->Name).c_str());
-
+			if (selectedFile && this->selectedFile->LoadedFile->Text == "")
+				this->selectedFile->LoadedFile->Text = string(this->selectedFile->LoadedFile->Binary, this->selectedFile->LoadedFile->BinarySize);
 			ImGui::InputTextMultiline(("##text_" + buildFile->Name).c_str(), (char*)selectedFile->LoadedFile->Text.c_str(), selectedFile->LoadedFile->Text.size(), ImVec2(-1, -1), ImGuiInputTextFlags_ReadOnly);
 			ImGui::End();
 
@@ -296,6 +342,9 @@ bool ViewWindow::Render()
 				ImGui::SetNextWindowFocus();
 			}
 			ImGui::Begin(("Image##image_" + buildFile->Name).c_str());
+			if (selectedFile->LoadedFile->Image == nullptr)
+				DirectX::LoadTextureFromFile(selectedFile->LoadedFile->FullPath, selectedFile->LoadedFile->Image);
+
 			if (selectedFile->LoadedFile->Image && DirectX::LoadedImages.find(selectedFile->LoadedFile->Image) != DirectX::LoadedImages.end()) {
 				DirectX::LoadedImage info = DirectX::LoadedImages[selectedFile->LoadedFile->Image]; // there always will be info about image
 				float aspect = (float)info.Width / (float)max(info.Height, 1);
@@ -310,6 +359,8 @@ bool ViewWindow::Render()
 				ImGui::SetNextWindowFocus();
 			}
 			ImGui::Begin(("Binary##binary_" + buildFile->Name).c_str());
+			if (selectedFile && this->selectedFile->LoadedFile->BinaryHex == "")
+				this->selectedFile->LoadedFile->BinaryHex = ToHex2(this->selectedFile->LoadedFile->Binary, this->selectedFile->LoadedFile->BinarySize, true);
 			ImGui::InputTextMultiline(("##binary_" + buildFile->Name).c_str(), (char*)selectedFile->LoadedFile->BinaryHex.c_str(), selectedFile->LoadedFile->BinaryHex.size(), ImVec2(-1, ImGui::GetContentRegionAvail().y - 30), ImGuiInputTextFlags_ReadOnly);
 			if (ImGui::InputInt("Current row", &this->currentBinaryRow)) {
 				if (this->currentBinaryRow < 0)

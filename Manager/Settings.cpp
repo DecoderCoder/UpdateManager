@@ -11,6 +11,7 @@ void Settings::LoadSettings()
 	settingsini = to_string(UpdateManager::GetExecutableFolder().wstring() + L"\\settings.ini");
 	if (fs::exists(settingsini)) {
 		inih::INIReader r{ settingsini };
+		Settings::LowRAM = r.Get<bool>("settings", "low_ram", false);
 		Settings::DarkMode = r.Get<bool>("settings", "dark_mode", true);
 		Settings::ThreadsCount = r.Get<int>("settings", "threads_count", 1);
 		Settings::AlwaysUnpackDepot = r.Get<bool>("settings", "always_unpack", true);
@@ -24,6 +25,7 @@ void Settings::LoadSettings()
 void Settings::SaveSettings()
 {
 	inih::INIReader r;
+	r.InsertEntry<bool>("settings", "low_ram", Settings::LowRAM);
 	r.InsertEntry<bool>("settings", "dark_mode", Settings::DarkMode);
 	r.InsertEntry<int>("settings", "threads_count", Settings::ThreadsCount);
 	r.InsertEntry<bool>("settings", "always_unpack", Settings::AlwaysUnpackDepot);

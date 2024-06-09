@@ -49,7 +49,7 @@ void RenderThread() {
 	DirectX::LoadTextureFromMemory(Global::ddma.first, Global::ddma.second, Global::ddmaImage);
 	//downloadAbout = std::async(std::launch::async, [&]() {
 
-	//	});
+	//});
 
 	while (DirectX::Windows.size() > 0) {
 		DirectX::Render();

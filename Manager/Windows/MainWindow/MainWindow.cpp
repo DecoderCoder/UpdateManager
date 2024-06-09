@@ -171,7 +171,7 @@ bool MainWindow::Render()
 		style->FrameBorderSize = 1;
 	}
 
-
+	style->WindowMinSize = ImVec2(500, 500);
 	style->WindowTitleAlign = ImVec2(0.5f, 0.5f);
 	style->AntiAliasedFill = true;
 	style->AntiAliasedLines = true;
@@ -291,7 +291,11 @@ bool MainWindow::Render()
 	ImGui::Columns(3);
 	if (disableAll)
 		ImGui::BeginDisabled();
-	ImGui::Text("Hosts");
+
+	if (selectedHost != -1 && UpdateManager::GetHosts()->at(selectedHost).IsAdmin)
+		ImGui::Text("Hosts [ADMIN]");
+	else
+		ImGui::Text("Hosts");
 	ImGui::PushItemWidth(-1);
 
 	if (ImGui::BeginListBox("##host")) {
@@ -474,7 +478,7 @@ bool MainWindow::Render()
 				}
 				else {
 					if (depot->Downloaded) {
-						switch (depot->LoadDepot(false)) {
+						switch (depot->LoadDepot(false, Settings::LowRAM)) {
 						case BuildDepot::LoadResult::Success: {
 							switch (depot->CheckDepot(false)) {
 							case BuildDepot::UnpackResult::Success: {
@@ -515,6 +519,9 @@ bool MainWindow::Render()
 							break;
 						}
 						}
+						//if (Settings::LowRAMMode) {
+						//	depot->UnloadDepot();
+						//}
 					}
 					else {
 						text = "Available";
@@ -573,8 +580,12 @@ bool MainWindow::Render()
 	disabled = !selectedDepots.size();
 	if (disableAll || disabled)
 		ImGui::BeginDisabled();
-	if (ImGui::Button("Remove depot", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
+	if (ImGui::Button("Remove local depot", ImVec2(ImGui::GetContentRegionAvail().x / 2 - style->FramePadding.x, 0))) {
 		ImGui::OpenPopup("Remove Depot##depot");
+	}
+	ImGui::SameLine();
+	if (ImGui::Button("Remove depot on the server", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
+		ImGui::OpenPopup("Remove Depot##depot", true);
 	}
 	if (disableAll || disabled)
 		ImGui::EndDisabled();
@@ -660,7 +671,7 @@ bool MainWindow::Render()
 	if (disableAll || disabled)
 		ImGui::EndDisabled();
 	ImGui::SameLine();
-	if (disableAll)
+	if (disableAll || selectedDepots.size() == -1)
 		ImGui::BeginDisabled();
 	if (ImGui::Button("Open", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
 		OpenSelected();
@@ -671,6 +682,7 @@ bool MainWindow::Render()
 
 	//ImGui::SetNextWindowSize(ImVec2(1000, 700), ImGuiCond_FirstUseEver);
 	if (ImGui::BeginPopupModal("Settings##mainwindow", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) {
+		ImGui::Checkbox("Low RAM mode", &Settings::LowRAM);
 		ImGui::Checkbox("Dark Mode", &Settings::DarkMode);
 		ImGui::BeginDisabled();
 		ImGui::Checkbox("Use SSL", &Settings::UseSSL);

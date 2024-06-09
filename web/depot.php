@@ -35,7 +35,18 @@ if (!empty($_POST)) {
             unlink($filename);
         $file = base64_decode($_POST['depot']);
         file_put_contents($filename, $file);
-        $mysql->query('INSERT INTO `depots` (`buildId`, `filename`, `uuid`, `sha`, `keyId`, `size`) VALUES (' . $build['id'] . ', \'' . $depotName . '\', \'' . $uuid . '\', \'' . bin2hex(hash('sha256', $file, true)) . '\', NULL, ' . strlen($file) . ')');
+
+        $key = $_POST['key'];
+        if($key != 'null'){
+            $key = $mysql->query('SELECT * FROM `accessKeys` WHERE `accessGroupId` = '.$app['accessGroupId'].' AND `name` = \''.$key.'\'');
+            if($key->num_rows > 0)
+            {
+                $key = $key->fetch_all(MYSQLI_ASSOC)[0]['id'];
+            } else {
+                $key = 'NULL';
+            }
+        }
+        $mysql->query('INSERT INTO `depots` (`buildId`, `filename`, `uuid`, `sha`, `keyId`, `size`) VALUES (' . $build['id'] . ', \'' . $depotName . '\', \'' . $uuid . '\', \'' . bin2hex(hash('sha256', $file, true)) . '\', '.$key.', ' . strlen($file) . ')');
     }
 } else {
     $depotUuid = urlencode($_GET['uuid']);
@@ -48,6 +59,7 @@ if (!empty($_POST)) {
         $filename = $_SERVER['DOCUMENT_ROOT'] . '/apps/' . $app['name'] . '/' . $build['customId'] . '/depots/' . $depotName;
 
         if (file_exists($filename)) {
+            header('Content-Length: '.$depot['size']);
             header('Content-Type: application/octet-stream');
             header("Content-Transfer-Encoding: Binary");
             readfile($filename);

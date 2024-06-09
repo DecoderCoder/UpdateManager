@@ -7,7 +7,7 @@
 class KeyManagerWindow : public Window {
 private:
 	int selectedHost = -1;
-	UpdateManager::Host::AccessGroup* selectedAccessGroup;
+	UpdateManager::AccessGroup* selectedAccessGroup;
 public:
 	KeyManagerWindow();
 	KeyManagerWindow(int selectedHost);

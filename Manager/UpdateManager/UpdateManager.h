@@ -33,11 +33,13 @@ namespace UpdateManager {
 
 		class Key {
 		public:
-			string Name;
-			string Value;
+			string Name = "";
+			string Value = "";
 
 			bool IsValid();
 		};
+
+		inline Key EmptyKey;
 
 		void LoadKeysFromJSON(UpdateManager::Host* host, Json::Value json);
 		void LoadKeysFromJSON(UpdateManager::Host* host, string json);
@@ -86,6 +88,7 @@ namespace UpdateManager {
 		UnpackResult lastUnpackResult = UnpackResult::Null;
 		UnpackResult lastCheckResult = UnpackResult::Null;
 		LoadResult lastLoadResult = LoadResult::Null;
+		bool locked = false;
 	public:
 
 		enum class DFileType {
@@ -114,13 +117,32 @@ namespace UpdateManager {
 
 		void UploadDepot();
 		void DownloadDepot(std::function<bool(uint64_t current, uint64_t total)> callback = nullptr);
-		LoadResult LoadDepot(bool force = true);
+		LoadResult LoadDepot(bool force = true, bool freeAfterLoad = false);
 		void UnloadDepot();
 		UnpackResult GetFileType();
 		UnpackResult CheckDepot(bool force = true);
 		UnpackResult UnpackDepot(int* file, int* fileCount, bool force = true);
 		UnpackResult UnpackDepot(bool force = true);
 		bool PackDepot();
+
+		void SetLock(bool lock);
+
+		
+	};
+
+	class AccessGroup {
+		Host* host;
+	public:
+		string Name;
+		string Value;
+
+		AccessGroup(Host* host);
+
+		bool HasKey(string name);
+		void AddKey(string name, string value, bool online = false);
+		void AddKey(KeyManager::Key key, bool online = false);
+
+		std::vector<KeyManager::Key> Keys;
 	};
 
 	class Build {
@@ -139,11 +161,12 @@ namespace UpdateManager {
 		bool HasDetails();
 		bool HasDepot(string name);
 		void AddDepot(string name);
-		void RemoveDepot(string name);
+		void RemoveDepot(string name, bool onServer = false);
 	};
 
 	class App {
 	public:
+		UpdateManager::AccessGroup* AccessGroup;
 		bool WaitingGetBuilds = false;
 		bool OnServer = false;
 		string Id;
@@ -156,20 +179,7 @@ namespace UpdateManager {
 	class Host {
 	private:
 	public:
-		class AccessGroup {
-			Host* host;
-		public:
-			string Name;
-			string Value;
-
-			AccessGroup(Host* host);
-
-			bool HasKey(string name);
-			void AddKey(string name, string value, bool online = false);
-			void AddKey(KeyManager::Key key, bool online = false);
-
-			std::vector<KeyManager::Key> Keys;
-		};
+		
 
 		enum class AddAppResponse {
 			AlreadyExists,
@@ -193,10 +203,10 @@ namespace UpdateManager {
 
 		std::vector<AccessGroup*> accessGroups;
 
-		UpdateManager::Host::AccessGroup* GetAccessGroup(string value);
+		UpdateManager::AccessGroup* GetAccessGroup(string value);
 		bool HasAccessGroupName(string name);
 		bool HasAccessGroup(string value);
-		UpdateManager::Host::AccessGroup* AddAccessGroup(string name, string value, bool online = false, AddAccessGroupResponse* result = nullptr);
+		UpdateManager::AccessGroup* AddAccessGroup(string name, string value, bool online = false, AddAccessGroupResponse* result = nullptr);
 
 		AddAppResponse AddApp(string name, string accessGroupValue, int ifExists = -1);
 		void RemoveApp(string name);

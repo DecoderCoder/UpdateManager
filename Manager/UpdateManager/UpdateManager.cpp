@@ -80,18 +80,21 @@ std::vector<Host>* UpdateManager::GetHosts(bool enforce)
 			fGetAccessGroups[host] = std::async(std::launch::async, [](Host* host) {
 				httplib::Client cli("https://" + host->Uri);
 				auto res = cli.Get("/pipeline/v2/update/access_groups.json");
-				Json::Value root;
-				Json::Reader reader;
-				reader.parse(res->body, root);
-				for (auto obj : root["accessGroups"]) {
-					auto accessGroup = host->AddAccessGroup(obj["name"].asString(), obj["value"].asString());
-					if (accessGroup)
-						for (auto key : obj["keys"]) {
-							UpdateManager::KeyManager::Key nKey;
-							nKey.Name = key["name"].asString();
-							nKey.Value = key["value"].asString();
-							accessGroup->Keys.push_back(nKey);
-						}
+				if (res.error() == httplib::Error::Success && res->status == 200) {
+					Json::Value root;
+					Json::Reader reader;
+					reader.parse(res->body, root);
+
+					for (auto obj : root["accessGroups"]) {
+						auto accessGroup = host->AddAccessGroup(obj["name"].asString(), obj["value"].asString());
+						if (accessGroup)
+							for (auto key : obj["keys"]) {
+								UpdateManager::KeyManager::Key nKey;
+								nKey.Name = key["name"].asString();
+								nKey.Value = key["value"].asString();
+								accessGroup->Keys.push_back(nKey);
+							}
+					}
 				}
 				}, host);
 		}
@@ -118,7 +121,7 @@ fs::path UpdateManager::GetExecutableFolder()
 //  0 Restore
 //  1 Create new
 
-UpdateManager::Host::AccessGroup* UpdateManager::Host::GetAccessGroup(string value)
+UpdateManager::AccessGroup* UpdateManager::Host::GetAccessGroup(string value)
 {
 	for (int i = 0; i < this->accessGroups.size(); i++) {
 		if (this->accessGroups[i]->Value == value)
@@ -145,7 +148,7 @@ bool UpdateManager::Host::HasAccessGroup(string value)
 	return false;
 }
 
-UpdateManager::Host::AccessGroup* UpdateManager::Host::AddAccessGroup(string name, string value, bool online, AddAccessGroupResponse* result)
+UpdateManager::AccessGroup* UpdateManager::Host::AddAccessGroup(string name, string value, bool online, AddAccessGroupResponse* result)
 {
 	if (this->IsAdmin && online) {
 		Json::Value root;
@@ -166,7 +169,7 @@ UpdateManager::Host::AccessGroup* UpdateManager::Host::AddAccessGroup(string nam
 			return nullptr;
 		}
 	}
-	UpdateManager::Host::AccessGroup* group = new UpdateManager::Host::AccessGroup(this);
+	UpdateManager::AccessGroup* group = new UpdateManager::AccessGroup(this);
 	group->Name = name;
 	group->Value = value;
 	this->accessGroups.push_back(group);
@@ -261,7 +264,7 @@ vector<App>* UpdateManager::Host::GetApps(bool enforce)
 				if (this->IsAdmin) {
 					httplib::Client cli("https://" + this->Uri);
 					auto res = cli.Get("/pipeline/v2/update/apps.json");
-					if (res->status == 200)
+					if (res.error() == httplib::Error::Success && res->status == 200)
 					{
 						Json::Value root;
 						Json::Reader reader;
@@ -308,7 +311,7 @@ KeyManager::Key UpdateManager::Host::GetKey(string name)
 std::optional<Json::Value> GetDetailsJSON(string host, string ver, string ghub) {
 	httplib::Client cli("https://" + host);
 	auto res = cli.Get("/pipeline/" + ver + "/update/" + ghub + "/win/canary/details.json");
-	if (res->status != 200)
+	if (res.error() != httplib::Error::Success || res->status != 200)
 		return nullopt;
 	Json::Value root;
 	Json::Reader reader;
@@ -319,7 +322,7 @@ std::optional<Json::Value> GetDetailsJSON(string host, string ver, string ghub) 
 std::optional<Json::Value> GetAccessGroupJSON(string host, string accessGroup) {
 	httplib::Client cli("https://" + host);
 	auto res = cli.Get("https://updates.ghub.logitechg.com/pipeline/v2/access/" + accessGroup + "/content.json");
-	if (res->status != 200)
+	if (res.error() != httplib::Error::Success || res->status != 200)
 		return nullopt;
 	Json::Value root;
 	Json::Reader reader;
@@ -434,6 +437,7 @@ vector<Build>* UpdateManager::App::GetBuilds(bool enforce)
 					if (details.has_value()) {
 						if (details.value().isMember("keys") && details.value()["keys"].isMember("accessGroup")) {
 							Log("Found Access Group " + dye::light_aqua(details.value()["keys"]["accessGroup"].asString()) + " in " + dye::aqua(newBuild->Id) + " build");
+							this->AccessGroup = this->Host->GetAccessGroup(details.value()["keys"]["accessGroup"].asString());
 							std::optional<Json::Value> content = GetAccessGroupJSON(this->Host->Uri, details.value()["keys"]["accessGroup"].asString());
 							if (content.has_value()) {
 								KeyManager::LoadKeysFromJSON(this->Host, content.value());
@@ -496,8 +500,12 @@ void UpdateManager::Build::AddDepot(string name)
 
 }
 
-void UpdateManager::Build::RemoveDepot(string name)
+void UpdateManager::Build::RemoveDepot(string name, bool onServer)
 {
+	if (onServer) {
+
+	}
+
 	if (fs::exists(GetExecutableFolder().wstring() + L"\\updates\\" + to_wstring(this->App->Host->Uri) + L"\\" + to_wstring(this->App->Id) + L"\\" + to_wstring(this->Id) + L"\\unpacked\\" + to_wstring(name)))
 		fs::remove_all(GetExecutableFolder().wstring() + L"\\updates\\" + to_wstring(this->App->Host->Uri) + L"\\" + to_wstring(this->App->Id) + L"\\" + to_wstring(this->Id) + L"\\unpacked\\" + to_wstring(name));
 
@@ -512,9 +520,9 @@ void UpdateManager::BuildDepot::UploadDepot()
 	httplib::Headers headers = {
 { "Authorization",  base64_encode((const BYTE*)auth.data(), auth.size())}
 	};
-	httplib::Result res = cli.Post("/pipeline/v2/update/app/" + this->Build->App->Id + "/build/" + this->Build->Id + "/depot/upload/" + this->Name, headers, "depot=" + url_encode(base64_encode((BYTE*)this->Depot, this->DepotSize)), "application/x-www-form-urlencoded");
+	auto sendData = url_encode(base64_encode((BYTE*)this->Depot, this->DepotSize));
+	httplib::Result res = cli.Post("/pipeline/v2/update/app/" + this->Build->App->Id + "/build/" + this->Build->Id + "/depot/upload/" + this->Name, headers, "key=" + (this->Key.IsValid() ? this->Key.Name : "null") + "&depot=" + sendData, "application/x-www-form-urlencoded");
 }
-
 
 void UpdateManager::BuildDepot::DownloadDepot(std::function<bool(uint64_t current, uint64_t total)> callback)
 {
@@ -531,7 +539,7 @@ void UpdateManager::BuildDepot::DownloadDepot(std::function<bool(uint64_t curren
 	this->Downloaded = true;
 }
 
-BuildDepot::LoadResult UpdateManager::BuildDepot::LoadDepot(bool force)
+BuildDepot::LoadResult UpdateManager::BuildDepot::LoadDepot(bool force, bool freeAfterLoad)
 {
 	if (!force && this->lastLoadResult != LoadResult::Null)
 		return this->lastLoadResult;
@@ -547,8 +555,11 @@ BuildDepot::LoadResult UpdateManager::BuildDepot::LoadDepot(bool force)
 	//	return BuildFile::LoadResult::Success;
 	//}
 
+	if (this->locked && !force) // the biggest problem is that interface of main program is in the another thread so It trys to load it when this shit is unpacking and cause memory leak cause do it again, and this is the easiest way to fix it
+		return LoadResult::Success;
 	size_t depotSize = fs::file_size(this->FullPath);
-	this->Depot = (char*)malloc(depotSize);
+	if (!this->Depot) // we hope that here is always valid ptr
+		this->Depot = (char*)malloc(depotSize);
 	this->DepotSize = depotSize;
 	if (this->DepotSize == 0) {
 		Log("Failed to load file " + this->Name + ", Error: Depot file is empty");
@@ -580,6 +591,11 @@ BuildDepot::LoadResult UpdateManager::BuildDepot::LoadDepot(bool force)
 	}
 	Log("Loaded file: " + this->Name + ", Size: " + to_string(depotSize) + " bytes, FileType: " + DFileTypeToString(this->FileType));
 	this->lastLoadResult = LoadResult::Success;
+	if (freeAfterLoad && !this->locked)
+	{
+		free(this->Depot);
+		this->Depot = nullptr;
+	}
 	return LoadResult::Success;
 }
 
@@ -655,6 +671,12 @@ BuildDepot::UnpackResult UpdateManager::BuildDepot::UnpackDepot(int* progress, i
 	if (!force && this->lastUnpackResult != UnpackResult::Null)
 		return this->lastUnpackResult;
 
+	if (this->LoadDepot() == LoadResult::Success && this->Depot == nullptr) {
+		this->SetLock(true);
+		this->UnloadDepot();
+		this->LoadDepot(true);
+	}
+
 	if (this->LoadDepot() != LoadResult::Success)
 	{
 		this->lastUnpackResult = UnpackResult::LoadError;
@@ -665,6 +687,7 @@ BuildDepot::UnpackResult UpdateManager::BuildDepot::UnpackDepot(int* progress, i
 
 	if (CheckResult != UnpackResult::Success && CheckResult != UnpackResult::NotUnpackedYet) {
 		this->lastUnpackResult = this->lastCheckResult;
+		this->SetLock(false);
 		return this->lastUnpackResult;
 	}
 	//else {
@@ -691,6 +714,7 @@ BuildDepot::UnpackResult UpdateManager::BuildDepot::UnpackDepot(int* progress, i
 		if (!key.IsValid())
 		{
 			this->lastUnpackResult == UnpackResult::KeyNotFound;
+			this->SetLock(false);
 			return this->lastUnpackResult;
 		}
 		unsigned int fileSize = *(unsigned int*)(this->Depot + offset);
@@ -754,8 +778,14 @@ bool UpdateManager::BuildDepot::PackDepot()
 		return false;
 
 	vector<fs::path> files = GetFiles(this->UnpackedDir);
+	for (int i = 0; i < files.size(); i++) {
+		if (fs::is_directory(files[i]))
+			files.erase(files.begin() + i--);
+	}
+
 	vector<string> filesRelative;
-	vector<pair<char*, size_t>> loadedFiles;
+	vector<pair<char*, size_t>> loadedFiles; // ptr | size
+	vector<string> fileShas;
 
 	size_t allSize = 0;
 
@@ -769,20 +799,70 @@ bool UpdateManager::BuildDepot::PackDepot()
 		filesRelative.push_back(file.string().substr(this->UnpackedDir.size() + 1));
 	}
 
-	if (files.size() == 0)
-		return false;
+	if (this->Key.IsValid())
+		this->FileType = UpdateManager::BuildDepot::DFileType::Encrypted;
+	else
+		this->FileType = UpdateManager::BuildDepot::DFileType::Default;
 
-	Json::Value json;
 	Json::Value jsonFiles;
 	for (int i = 0; i < files.size(); i++) {
 		Json::Value jsonFile;
 		jsonFile["name"] = filesRelative[i];
 		jsonFile["mode"] = 33188;
+		if (this->FileType == UpdateManager::BuildDepot::DFileType::Encrypted)
+		{
+			string fileSha = "";
+			for (int i = 0; i < 64; i++) {
+				fileSha.push_back(HexLower[rand() % (sizeof(HexLower) - 1)]); // randomSha
+			}
+			fileShas.push_back(fileSha);
+			jsonFile["sha"] = fileSha;
+		}
 		jsonFiles[i] = jsonFile;
 	}
-	json["files"] = jsonFiles;
-	string jsonString = json.toStyledString();
 
+	if (files.size() == 0)
+		return false;
+
+	Json::Value mainJson;
+
+
+	switch (this->FileType) {
+	case UpdateManager::BuildDepot::DFileType::Default: {
+
+		mainJson["files"] = jsonFiles;
+		break;
+	}
+	case UpdateManager::BuildDepot::DFileType::Encrypted: {
+		string headerSha;
+		for (int i = 0; i < 64; i++)
+			headerSha.push_back(HexLower[rand() % (sizeof(HexLower) - 1)]); // randomSha
+
+		mainJson["header-sha"] = headerSha;
+		mainJson["key-id"] = this->Key.Name;
+
+		Json::Value jsonFilesEncrypted;
+		jsonFilesEncrypted["files"] = jsonFiles;
+		string json = jsonFilesEncrypted.toStyledString();
+		char* jsonF = (char*)malloc(json.size());
+		json.copy(jsonF, json.size());
+		loadedFiles.insert(loadedFiles.begin(), make_pair(jsonF, json.size()));
+		fileShas.insert(fileShas.begin(), headerSha);
+
+		for (int i = 0; i < loadedFiles.size(); i++) {
+			string encrypted = EncryptAES(string(loadedFiles[i].first, loadedFiles[i].second), this->Key.Value, GetIV(fileShas[i], this->Key.Name));
+			free(loadedFiles[i].first);
+			loadedFiles[i].second = encrypted.size();
+			loadedFiles[i].first = (char*)malloc(loadedFiles[i].second);
+			memcpy(loadedFiles[i].first, encrypted.data(), loadedFiles[i].second);
+		}
+
+
+		break;
+	}
+	}
+
+	string jsonString = mainJson.toStyledString();
 	free(this->Depot);
 	this->DepotSize = 8 + jsonString.size() + allSize;
 	this->Depot = (char*)malloc(this->DepotSize);
@@ -792,7 +872,7 @@ bool UpdateManager::BuildDepot::PackDepot()
 	}
 
 	size_t offset = 0;
-	*((BuildDepot::DFileType*)(this->Depot + offset)) = BuildDepot::DFileType::Default; // this->FileType
+	*((BuildDepot::DFileType*)(this->Depot + offset)) = this->FileType; // this->FileType
 	offset += sizeof(BuildDepot::DFileType);
 
 	*((unsigned int*)(this->Depot + offset)) = jsonString.size();
@@ -800,17 +880,23 @@ bool UpdateManager::BuildDepot::PackDepot()
 	jsonString.copy((char*)(this->Depot + offset), jsonString.size(), 0);
 	offset += jsonString.size();
 
-	for (int i = 0; i < files.size(); i++) {
+	for (int i = 0; i < loadedFiles.size(); i++) {
 		*((unsigned int*)(this->Depot + offset)) = loadedFiles[i].second;
 		*((unsigned int*)(this->Depot + offset)) = (unsigned int)loadedFiles[i].second;
 		*((int*)(this->Depot + offset)) = loadedFiles[i].second;
 		offset += sizeof(unsigned int);
 		memcpy(this->Depot + offset, loadedFiles[i].first, loadedFiles[i].second);
 		offset += loadedFiles[i].second;
+		//free(loadedFiles[i].first);
 	}
 
 	WriteToFile(this->FullPath, this->Depot, this->DepotSize);
 	return true;
+}
+
+void UpdateManager::BuildDepot::SetLock(bool lock)
+{
+	this->locked = lock;
 }
 
 void UpdateManager::KeyManager::LoadKeysFromJSON(UpdateManager::Host* host, Json::Value json)
@@ -847,12 +933,12 @@ bool UpdateManager::KeyManager::Key::IsValid()
 	return true;
 }
 
-UpdateManager::Host::AccessGroup::AccessGroup(Host* host)
+UpdateManager::AccessGroup::AccessGroup(Host* host)
 {
 	this->host = host;
 }
 
-bool UpdateManager::Host::AccessGroup::HasKey(string name)
+bool UpdateManager::AccessGroup::HasKey(string name)
 {
 	for (auto obj : this->Keys) {
 		if (obj.Name == name)
@@ -861,7 +947,7 @@ bool UpdateManager::Host::AccessGroup::HasKey(string name)
 	return false;
 }
 
-void UpdateManager::Host::AccessGroup::AddKey(string name, string value, bool online)
+void UpdateManager::AccessGroup::AddKey(string name, string value, bool online)
 {
 	KeyManager::Key k;
 	k.Name = name;
@@ -869,7 +955,7 @@ void UpdateManager::Host::AccessGroup::AddKey(string name, string value, bool on
 	this->AddKey(k, online);
 }
 
-void UpdateManager::Host::AccessGroup::AddKey(KeyManager::Key key, bool online)
+void UpdateManager::AccessGroup::AddKey(KeyManager::Key key, bool online)
 {
 	if (this->HasKey(key.Name))
 #ifdef KEYSDUPLICATES

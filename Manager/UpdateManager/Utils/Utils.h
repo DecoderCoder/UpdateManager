@@ -6,6 +6,8 @@
 
 using namespace std;
 
+const char HexLower[16] = { '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b','c','d','e','f' };
+
 inline wstring to_wstring(string str) {
 	return std::wstring(str.begin(), str.end());
 }
@@ -84,12 +86,42 @@ static std::string ToHex(char* input, size_t size, bool upperCase) {
 			output.append(&hex2[(input[i] & 0xF0) >> 4], 1);
 			output.append(&hex2[input[i] & 0xF], 1);
 		}
-		
+
 		output.append(" ");
 		if ((i + 1) % 16 == 0 && i != 0)
 			output.append("\r\n");
 	}
 	return output;
+}
+
+static std::string ToHex2(char* input, size_t size, bool upperCase) { // a lot faster than ToHex impl in debug mode
+	const char hex[16] = { '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B','C','D','E','F' };
+	const char hex2[16] = { '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b','c','d','e','f' };
+	size_t retSize = size * 3 + (size / 16) * 2 + 1 + 2;
+	char* output = (char*)malloc(retSize);
+
+	int offst = 0;
+	for (size_t i = 0; i < size; i++) {
+		if (upperCase) {
+			output[offst++] = hex[(input[i] & 0xF0) >> 4];
+			output[offst++] = hex[(input[i] & 0xF)];
+
+		}
+		else {
+			output[offst++] = hex2[(input[i] & 0xF0) >> 4];
+			output[offst++] = hex2[(input[i] & 0xF)];
+		}
+
+		output[offst++] = ' ';
+		if ((i + 1) % 16 == 0 && i != 0)
+		{
+			output[offst++] = '\r';
+			output[offst++] = '\n';
+		}
+	}
+	auto ret = string(output, offst);
+	free(output);
+	return ret;
 }
 
 static void OpenFolder(std::wstring folder, std::vector<std::wstring> selectedFiles) {

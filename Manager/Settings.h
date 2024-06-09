@@ -1,6 +1,7 @@
 #pragma once
 
 namespace Settings {
+	inline bool LowRAM = false;
 	inline bool DarkMode = true;
 	inline int ThreadsCount = 1;
 	inline bool UseSSL = true;

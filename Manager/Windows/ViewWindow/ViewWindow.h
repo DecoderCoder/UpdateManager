@@ -1,6 +1,8 @@
 #pragma once
 #include "../../DirectX/DirectX.h"
 #include "../../UpdateManager/UpdateManager.h"
+#include "../../Settings.h"
+#include "../../Utils/Utils.h"
 
 class ViewWindow : public Window {
 	enum class LoadedFileType {
@@ -14,8 +16,8 @@ class ViewWindow : public Window {
 		std::wstring FullPath;
 		LoadedFileType FileType = LoadedFileType::Binary;
 		ID3D11ShaderResourceView* Image = nullptr;
-		char* Binary;
-		size_t BinarySize;
+		char* Binary = 0;
+		size_t BinarySize = 0;
 		string Text = "";
 		string BinaryHex = "";
 	};
@@ -41,6 +43,7 @@ class ViewWindow : public Window {
 
 	void FreeNodes(DirectoryNode* node);
 
+	unsigned int FilesCount = 0;
 	BuildDepot* buildFile = nullptr;
 	ImGuiID dockId = -1;
 	bool createdByFile = false;
