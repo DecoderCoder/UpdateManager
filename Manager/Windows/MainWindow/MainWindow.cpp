@@ -45,6 +45,15 @@ void ResetDepotAdd() {
 	memset(inputDepotNameBuffer, 0, sizeof(inputDepotNameBuffer));
 }
 
+void CloseAllViewWindows() {
+	for (Window*& obj : DirectX::Windows) {
+		ViewWindow* view = dynamic_cast<ViewWindow*>(obj);
+		if (view != nullptr) {
+			view->Close();
+		}
+	}
+}
+
 const int dotsDelay = 300;
 std::pair<char, int> appsDots = make_pair(0, 0);
 std::pair<char, int> buildsDots = make_pair(0, 0);
@@ -397,8 +406,12 @@ bool MainWindow::Render()
 					if (!build->App->Host->IsAdmin && !build->HasDetails())
 						ImGui::BeginDisabled();
 				if (ImGui::Selectable(build->Id.c_str(), i == selectedBuild)) {
-					selectedBuild = i;
-					selectedDepots.clear();
+					if (selectedBuild != i) {
+						CloseAllViewWindows();
+
+						selectedBuild = i;
+						selectedDepots.clear();
+					}
 				}
 				const char* statusText;
 				if (build->LastBuild) {
@@ -647,15 +660,15 @@ bool MainWindow::Render()
 	if (ImGui::BeginPopupModal("Add Depot##depot", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) {
 		if (GetAsyncKeyState(VK_ESCAPE))
 			ImGui::CloseCurrentPopup();
+		CloseAllViewWindows(); // to prevent bugs
 		string inputDepotName = string(inputDepotNameBuffer);
 		ImGui::Text(" Depot Name");
-		ImGui::InputText("##depotname", inputDepotNameBuffer, sizeof(inputDepotNameBuffer), ImGuiInputTextFlags_CharsNoBlank | ImGuiInputTextFlags_CallbackCharFilter, [](ImGuiInputTextCallbackData* data) { if (data->EventChar >= 'a' && data->EventChar <= 'z' || data->EventChar >= 'A' && data->EventChar <= 'Z' || data->EventChar >= '0' && data->EventChar <= '9') return 0; return 1; });
+		ImGui::InputText("##depotname", inputDepotNameBuffer, sizeof(inputDepotNameBuffer), ImGuiInputTextFlags_CharsNoBlank | ImGuiInputTextFlags_CallbackCharFilter, [](ImGuiInputTextCallbackData* data) { if (data->EventChar >= 'a' && data->EventChar <= 'z' || data->EventChar >= 'A' && data->EventChar <= 'Z' || data->EventChar >= '0' && data->EventChar <= '9' || data->EventChar == '_') return 0; return 1; });
 
 		disabled = inputDepotName.size() == 0;
 		if (disabled)
 			ImGui::BeginDisabled();
 		if (ImGui::Button("Add", ImVec2(ImGui::GetContentRegionAvail().x / 2 - ImGui::GetStyle().ItemInnerSpacing.x, 0))) {
-
 			UpdateManager::GetHosts()->at(selectedHost).GetApps()->at(selectedApp).GetBuilds()->at(selectedBuild).AddDepot(inputDepotName);
 			ImGui::CloseCurrentPopup();
 		}
@@ -762,6 +775,7 @@ bool MainWindow::Render()
 		if (disabled)
 			ImGui::BeginDisabled();
 		if (ImGui::Button("Add", ImVec2(ImGui::GetContentRegionAvail().x / 2 - ImGui::GetStyle().ItemInnerSpacing.x, 0))) {
+			CloseAllViewWindows();
 			app->AddBuild(inputBuildName);
 			ResetBuildAdd();
 			close = true;

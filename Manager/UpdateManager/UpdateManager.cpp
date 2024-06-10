@@ -367,7 +367,7 @@ vector<Build>* UpdateManager::App::GetBuilds(bool enforce)
 	if (!enforce && this->Builds.size()) {
 		return &this->Builds;
 	}
-	if (!this->WaitingGetBuilds) {
+	if (!this->WaitingGetBuilds || enforce) {
 		this->WaitingGetBuilds = true;
 		fGetBuilds[this] = std::async([&]() {
 			const auto buildFolder = GetExecutableFolder().wstring() + L"\\updates\\" + to_wstring(this->Host->Uri) + L"\\" + to_wstring(this->Id) + L"\\";

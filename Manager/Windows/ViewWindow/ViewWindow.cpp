@@ -367,7 +367,7 @@ bool ViewWindow::Render()
 
 	ImGui::BeginChild("##filesexplorer", ImVec2(ImGui::GetContentRegionAvail().x, 0), ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_AlwaysAutoResize | ImGuiChildFlags_Border);
 
-	ImGui::TextDisabled("You can drop files on this window");
+	ImGui::TextDisabled("You can drop files on this window,\r\nthey will be copied to the root dir");
 	ImGui::SameLine(ImGui::GetContentRegionAvail().x - 15.f / 2.f);
 
 	//auto buttonPos = ImGui::GetCursorPos();
@@ -378,7 +378,7 @@ bool ViewWindow::Render()
 
 	if (disabled)
 		ImGui::BeginDisabled();
-	if (ImGui::Button("R##refreshbuttom", ImVec2(15, 15))) {
+	if (ImGui::Button("R##refreshbuttom", ImVec2(15, 30))) {
 		RefreshFiles();
 	}
 	if (disabled)
