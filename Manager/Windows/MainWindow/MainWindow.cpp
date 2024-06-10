@@ -629,7 +629,7 @@ bool MainWindow::Render()
 		else
 			ImGui::Text(" Are you sure you want to\r\n remove selected depot(s)?");
 		string removeButtonText = "Remove";
-		if (removeOnServer) {
+		if (removeOnServer && !Settings::Admin::SkipRemoveConfirmation) {
 			int timeLeft = removeOnServer - GetTickCount();
 			timeLeft = max(0, timeLeft);
 			if (timeLeft)
@@ -748,7 +748,7 @@ bool MainWindow::Render()
 
 		ImGui::BeginChild("Admin#settings", ImVec2(ImGui::GetContentRegionAvail().x, 0), ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_AlwaysAutoResize | ImGuiChildFlags_Border);
 
-		//ImGui::Checkbox("Ask about downloading actual version", &Settings::Admin::AskDownloadNew);
+		ImGui::Checkbox("Skip depot remove timer", &Settings::Admin::SkipRemoveConfirmation);
 
 		ImGui::EndChild();
 

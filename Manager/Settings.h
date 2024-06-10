@@ -9,7 +9,7 @@ namespace Settings {
 	inline bool AlwaysUnpackDepot = true;
 
 	namespace Admin {
-		inline bool AskDownloadNew = true;
+		inline bool SkipRemoveConfirmation = true;
 	}
 
 #ifdef _DEBUG

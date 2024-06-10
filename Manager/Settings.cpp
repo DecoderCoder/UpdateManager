@@ -18,7 +18,7 @@ void Settings::LoadSettings()
 #ifdef _DEBUG
 		Settings::ShowImGuiDemoWindow = r.Get<bool>("settings", "show_demo", true);
 #endif
-		Settings::Admin::AskDownloadNew = r.Get<bool>("settings", "ask_download", true);
+		Settings::Admin::SkipRemoveConfirmation = r.Get<bool>("settings", "skip_remove_confirmation", true);
 	}
 }
 
@@ -30,7 +30,7 @@ void Settings::SaveSettings()
 	r.InsertEntry<int>("settings", "threads_count", Settings::ThreadsCount);
 	r.InsertEntry<bool>("settings", "always_unpack", Settings::AlwaysUnpackDepot);
 	r.InsertEntry<bool>("settings", "show_demo", Settings::ShowImGuiDemoWindow);
-	r.InsertEntry<bool>("settings", "ask_download", Settings::Admin::AskDownloadNew);
+	r.InsertEntry<bool>("settings", "skip_remove_confirmation", Settings::Admin::SkipRemoveConfirmation);
 	if (fs::exists(settingsini)) {
 		fs::remove(settingsini);
 	}
