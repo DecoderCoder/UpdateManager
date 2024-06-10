@@ -94,6 +94,8 @@ bool KeyManagerWindow::Render()
 		ImGui::OpenPopup("Add Key");
 	}
 	if (ImGui::BeginPopupModal("Add Key", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) {
+		if (GetAsyncKeyState(VK_ESCAPE))
+			ImGui::CloseCurrentPopup();
 		ImGui::Text(" Name ");
 		ImGui::SetNextItemWidth(ImGui::CalcTextSize("53836da6-de2f-44b8-8454-1f0ccb4b1e65").x + ImGui::GetStyle().FramePadding.x * 4);
 		ImGui::InputText("##keyname", inputKeyNameBuffer, sizeof(inputKeyNameBuffer));
@@ -144,6 +146,8 @@ bool KeyManagerWindow::Render()
 	}
 
 	if (ImGui::BeginPopupModal("Add Access Group", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) {
+		if (GetAsyncKeyState(VK_ESCAPE))
+			ImGui::CloseCurrentPopup();
 		string inputAccessGroupName = string(inputAccessGroupNameBuffer);
 		string inputAccessGroup = string(inputAccessGroupBuffer);
 
@@ -187,6 +191,8 @@ bool KeyManagerWindow::Render()
 		}
 
 		if (ImGui::BeginPopupModal("Already exists##accessgroup", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) {
+			if (GetAsyncKeyState(VK_ESCAPE))
+				ImGui::CloseCurrentPopup();
 			ImGui::Text("Access group with this name or value already exists");
 			if (ImGui::Button("Close", ImVec2(-1, 0))) {
 				ImGui::CloseCurrentPopup();

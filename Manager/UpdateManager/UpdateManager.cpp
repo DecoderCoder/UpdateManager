@@ -279,12 +279,19 @@ vector<App>* UpdateManager::Host::GetApps(bool enforce)
 
 				if (fs::exists(GetExecutableFolder().wstring() + L"\\updates\\"))
 				{
+					std::vector<fs::path> paths;
 					for (auto obj : fs::directory_iterator(GetExecutableFolder().wstring() + L"\\updates\\" + to_wstring(this->Uri) + L"\\"))
+					{
+						paths.push_back(obj.path());
+					}
+					//std::sort(paths.begin(), paths.end(), [](const fs::path& lhs, const fs::path& rhs) {  return lhs.string() < rhs.string(); });
+					std::sort(paths.begin(), paths.end(), [](const fs::path& lhs, const fs::path& rhs) {  return lhs.string().length() < rhs.string().length(); });
+					for (auto obj : paths)
 					{
 						if (!fs::is_directory(obj))
 							continue;
 						App newVersion;
-						newVersion.Id = obj.path().filename().string();
+						newVersion.Id = obj.filename().string();
 						newVersion.Host = this;
 						newVersion.OnServer = std::find(onServer.begin(), onServer.end(), newVersion.Id) != onServer.end();
 						ret.push_back(newVersion);
@@ -310,7 +317,7 @@ KeyManager::Key UpdateManager::Host::GetKey(string name)
 
 std::optional<Json::Value> GetDetailsJSON(string host, string ver, string ghub) {
 	httplib::Client cli("https://" + host);
-	auto res = cli.Get("/pipeline/" + ver + "/update/" + ghub + "/win/canary/details.json");
+	auto res = cli.Get("/pipeline/" + ver + "/update/" + ghub + "/win/public/details.json");
 	if (res.error() != httplib::Error::Success || res->status != 200)
 		return nullopt;
 	Json::Value root;
@@ -387,10 +394,12 @@ vector<Build>* UpdateManager::App::GetBuilds(bool enforce)
 
 			if (fs::exists(GetExecutableFolder().wstring() + L"\\updates\\"))
 			{
+				bool hasBuilds = false;
 				for (auto obj : fs::directory_iterator(buildFolder))
 				{
 					if (!fs::is_directory(obj))
 						continue;
+					hasBuilds = true;
 					Build* newBuild = new Build(); // idk why but if we do regular object without new, it will be free after this function (btw, todo: fix memory leaks :D)
 					newBuild->App = this;
 					newBuild->Id = obj.path().filename().string();
@@ -462,6 +471,10 @@ vector<Build>* UpdateManager::App::GetBuilds(bool enforce)
 
 					ret.push_back(*newBuild);
 				}
+				if (!hasBuilds && !this->Host->IsAdmin) {
+					fs::remove_all(buildFolder);
+					this->Host->RemoveApp(this->Id);
+				}
 				this->Builds = ret;
 			}
 			this->WaitingGetBuilds = false;
@@ -473,6 +486,11 @@ vector<Build>* UpdateManager::App::GetBuilds(bool enforce)
 vector<BuildDepot>* UpdateManager::Build::GetDepots()
 {
 	return &this->Depots;
+}
+
+bool UpdateManager::Build::IsValid()
+{
+	return !this->ignoreBuild;
 }
 
 bool UpdateManager::Build::HasDetails()
@@ -503,7 +521,13 @@ void UpdateManager::Build::AddDepot(string name)
 void UpdateManager::Build::RemoveDepot(string name, bool onServer)
 {
 	if (onServer) {
+		httplib::Client cli("https://" + this->App->Host->Uri);
+		string auth = this->App->Host->Login + ":" + this->App->Host->Password;
+		httplib::Headers headers = {
+	{ "Authorization",  base64_encode((const BYTE*)auth.data(), auth.size())}
+		};
 
+		auto res = cli.Get("/pipeline/v2/update/app/" + this->App->Id + "/build/" + this->Id + "/depot/remove/" + name);
 	}
 
 	if (fs::exists(GetExecutableFolder().wstring() + L"\\updates\\" + to_wstring(this->App->Host->Uri) + L"\\" + to_wstring(this->App->Id) + L"\\" + to_wstring(this->Id) + L"\\unpacked\\" + to_wstring(name)))
@@ -522,6 +546,13 @@ void UpdateManager::BuildDepot::UploadDepot()
 	};
 	auto sendData = url_encode(base64_encode((BYTE*)this->Depot, this->DepotSize));
 	httplib::Result res = cli.Post("/pipeline/v2/update/app/" + this->Build->App->Id + "/build/" + this->Build->Id + "/depot/upload/" + this->Name, headers, "key=" + (this->Key.IsValid() ? this->Key.Name : "null") + "&depot=" + sendData, "application/x-www-form-urlencoded");
+	if (res.error() == httplib::Error::Success)
+	{
+		Log("Depot " + dye::light_green(this->Name) + " was uploaded successfully");
+	}
+	else {
+		Log("Depot " + dye::light_blue(this->Name) + " wasn't upload, error: " + dye::red(to_string(res.error())));
+	}
 }
 
 void UpdateManager::BuildDepot::DownloadDepot(std::function<bool(uint64_t current, uint64_t total)> callback)
@@ -546,7 +577,8 @@ BuildDepot::LoadResult UpdateManager::BuildDepot::LoadDepot(bool force, bool fre
 	if (this->lastLoadResult == LoadResult::Success)
 		return LoadResult::Success;
 	if (!fs::exists(this->FullPath)) {
-		Log("Failed to load file " + this->Name + ", Error: FileNotFound");
+		if (Logging)
+			Log("Failed to load file " + this->Name + ", Error: FileNotFound");
 		this->lastLoadResult = LoadResult::FileNotFound;
 		return LoadResult::FileNotFound;
 	}
@@ -562,7 +594,8 @@ BuildDepot::LoadResult UpdateManager::BuildDepot::LoadDepot(bool force, bool fre
 		this->Depot = (char*)malloc(depotSize);
 	this->DepotSize = depotSize;
 	if (this->DepotSize == 0) {
-		Log("Failed to load file " + this->Name + ", Error: Depot file is empty");
+		if (Logging)
+			Log("Failed to load file " + this->Name + ", Error: Depot file is empty");
 		this->lastLoadResult = LoadResult::UnknownError;
 		return LoadResult::UnknownError;
 	}
@@ -570,7 +603,8 @@ BuildDepot::LoadResult UpdateManager::BuildDepot::LoadDepot(bool force, bool fre
 	{
 		//free(this->Depot);
 		//this->Depot = nullptr;
-		Log("Failed to load file " + this->Name + ", Error: UnknownError (malloc failed)");
+		if (Logging)
+			Log("Failed to load file " + this->Name + ", Error: UnknownError (malloc failed)");
 		this->lastLoadResult = LoadResult::UnknownError;
 		return this->lastLoadResult;
 	}
@@ -584,12 +618,14 @@ BuildDepot::LoadResult UpdateManager::BuildDepot::LoadDepot(bool force, bool fre
 		{
 			free(this->Depot);
 			this->Depot = nullptr;
-			Log("Failed to load file " + this->Name + ", Error: UnknownFileType");
+			if (Logging)
+				Log("Failed to load file " + this->Name + ", Error: UnknownFileType");
 			this->lastLoadResult = LoadResult::UnknownFileType;
 			return LoadResult::UnknownFileType;
 		}
 	}
-	Log("Loaded file: " + this->Name + ", Size: " + to_string(depotSize) + " bytes, FileType: " + DFileTypeToString(this->FileType));
+	if (Logging)
+		Log("Loaded file: " + this->Name + ", Size: " + to_string(depotSize) + " bytes, FileType: " + DFileTypeToString(this->FileType));
 	this->lastLoadResult = LoadResult::Success;
 	if (freeAfterLoad && !this->locked)
 	{
@@ -796,7 +832,7 @@ bool UpdateManager::BuildDepot::PackDepot()
 		allSize += 4;
 		allSize += fileSize;
 		loadedFiles.push_back(make_pair(f, fileSize));
-		filesRelative.push_back(file.string().substr(this->UnpackedDir.size() + 1));
+		filesRelative.push_back(fs::relative(file, this->UnpackedDir).string());
 	}
 
 	if (this->Key.IsValid())
@@ -821,8 +857,11 @@ bool UpdateManager::BuildDepot::PackDepot()
 		jsonFiles[i] = jsonFile;
 	}
 
-	if (files.size() == 0)
+	if (files.size() == 0) {
+		Log(dye::light_blue(this->Name) + " depot is empty");
 		return false;
+	}
+
 
 	Json::Value mainJson;
 
@@ -856,8 +895,6 @@ bool UpdateManager::BuildDepot::PackDepot()
 			loadedFiles[i].first = (char*)malloc(loadedFiles[i].second);
 			memcpy(loadedFiles[i].first, encrypted.data(), loadedFiles[i].second);
 		}
-
-
 		break;
 	}
 	}
@@ -868,6 +905,7 @@ bool UpdateManager::BuildDepot::PackDepot()
 	this->Depot = (char*)malloc(this->DepotSize);
 	if (!this->Depot) {
 		this->DepotSize = 0;
+		Log("Failed to malloc memory for " + dye::light_blue(this->Name) + "depot");
 		return false;
 	}
 
@@ -891,6 +929,7 @@ bool UpdateManager::BuildDepot::PackDepot()
 	}
 
 	WriteToFile(this->FullPath, this->Depot, this->DepotSize);
+	Log("Packed " + dye::light_green(this->Name) + " depot saved to file: " + to_string(this->FullPath));
 	return true;
 }
 

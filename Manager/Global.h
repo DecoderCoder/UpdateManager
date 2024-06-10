@@ -1,5 +1,6 @@
 #pragma once
 #include "DirectX/DirectX.h"
+#include "Utils/DropManager.h"
 
 namespace Global {
 	inline std::pair<unsigned char*, size_t> myAvatar;

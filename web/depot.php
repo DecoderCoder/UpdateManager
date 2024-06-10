@@ -19,7 +19,7 @@ include('db.php');
 
 $depotName = urlencode($_GET['name']);
 
-if (!empty($_POST)) {
+if (!empty($_GET['method'])) {
     if ($authed) {
         $appName = urlencode($_GET['app']);
         $buildName = urlencode($_GET['build']);
@@ -27,31 +27,39 @@ if (!empty($_POST)) {
         $app = $mysql->query('SELECT * FROM `apps` WHERE `name` = \'' . $appName . '\'')->fetch_all(MYSQLI_ASSOC)[0];
         $build = $mysql->query('SELECT * FROM `builds` WHERE `customId` = \'' . $buildName . '\' AND `appId` = ' . $app['id'])->fetch_all(MYSQLI_ASSOC)[0];
         $mysql->query('DELETE FROM `depots` WHERE `buildId` = ' . $build['id'] . ' AND `filename` = \'' . $depotName . '\'');
+
+        if ($_GET['method'] == 'remove') {
+            $mysql->query('DELETE FROM `depots` WHERE `id` = ' . $depot['id']);
+            if (file_exists($filename))
+                unlink($filename);
+            return;
+        }
         $uuid = guidv4();
         $filename = $_SERVER['DOCUMENT_ROOT'] . '/apps/' . $app['name'] . '/' . $build['customId'] . '/depots/' . $depotName;
         if (!file_exists(dirname($filename)))
             mkdir(dirname($filename), 0777, true);
-        if(file_exists($filename))
+        if (file_exists($filename))
             unlink($filename);
         $file = base64_decode($_POST['depot']);
         file_put_contents($filename, $file);
 
         $key = $_POST['key'];
-        if($key != 'null'){
-            $key = $mysql->query('SELECT * FROM `accessKeys` WHERE `accessGroupId` = '.$app['accessGroupId'].' AND `name` = \''.$key.'\'');
-            if($key->num_rows > 0)
-            {
+        if ($key != 'null') {
+            $key = $mysql->query('SELECT * FROM `accessKeys` WHERE `accessGroupId` = ' . $app['accessGroupId'] . ' AND `name` = \'' . $key . '\'');
+            if ($key->num_rows > 0) {
                 $key = $key->fetch_all(MYSQLI_ASSOC)[0]['id'];
             } else {
                 $key = 'NULL';
             }
         }
-        $mysql->query('INSERT INTO `depots` (`buildId`, `filename`, `uuid`, `sha`, `keyId`, `size`) VALUES (' . $build['id'] . ', \'' . $depotName . '\', \'' . $uuid . '\', \'' . bin2hex(hash('sha256', $file, true)) . '\', '.$key.', ' . strlen($file) . ')');
+        $mysql->query('INSERT INTO `depots` (`buildId`, `filename`, `uuid`, `sha`, `keyId`, `size`) VALUES (' . $build['id'] . ', \'' . $depotName . '\', \'' . $uuid . '\', \'' . bin2hex(hash('sha256', $file, true)) . '\', ' . $key . ', ' . strlen($file) . ')');
     }
 } else {
+    print_r('hello');
     $depotUuid = urlencode($_GET['uuid']);
     $depot = $mysql->query('SELECT * FROM `depots` WHERE `filename` = \'' . $depotName . '\' AND `uuid` = \'' . $depotUuid . '\'');
     if ($depot->num_rows > 0) {
+
         $depot = $depot->fetch_all(MYSQLI_ASSOC)[0];
         $build = $mysql->query('SELECT * FROM `builds` WHERE `id` = ' . $depot['buildId'])->fetch_all(MYSQLI_ASSOC)[0];
         $app = $mysql->query('SELECT * FROM `apps` WHERE `id` = ' . $build['appId'])->fetch_all(MYSQLI_ASSOC)[0];
@@ -59,7 +67,7 @@ if (!empty($_POST)) {
         $filename = $_SERVER['DOCUMENT_ROOT'] . '/apps/' . $app['name'] . '/' . $build['customId'] . '/depots/' . $depotName;
 
         if (file_exists($filename)) {
-            header('Content-Length: '.$depot['size']);
+            header('Content-Length: ' . $depot['size']);
             header('Content-Type: application/octet-stream');
             header("Content-Transfer-Encoding: Binary");
             readfile($filename);

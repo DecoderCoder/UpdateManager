@@ -3,6 +3,7 @@
 #include "../../UpdateManager/UpdateManager.h"
 #include "../../Settings.h"
 #include "../../Utils/Utils.h"
+#include "../../Utils/DropManager.h"
 
 class ViewWindow : public Window {
 	enum class LoadedFileType {
@@ -31,6 +32,10 @@ class ViewWindow : public Window {
 		bool IsDirectory = false;
 	};
 
+	HWND hwnd = 0;
+	DropManager dropManager;
+	void DropCallback(std::vector<std::wstring> files);
+
 	int currentBinaryRow = 0;
 	DirectoryNode depotFiles;
 	DirectoryNode* selectedFile;
@@ -40,13 +45,18 @@ class ViewWindow : public Window {
 	bool IsSelectedChanged();
 	void ParseFiles(wstring path, DirectoryNode* parentNode);
 	void RenderFileTree(DirectoryNode* node);
+	void RefreshFiles();
 
 	void FreeNodes(DirectoryNode* node);
 
 	unsigned int FilesCount = 0;
+	unsigned int FilesSize = 0;
 	BuildDepot* buildFile = nullptr;
 	ImGuiID dockId = -1;
 	bool createdByFile = false;
+
+	std::future<void> parsingFilesFuture;
+	std::future<void> copyingFilesFuture;
 public:
 	ViewWindow(wstring buildFilePath, UpdateManager::Build* build);
 	ViewWindow(BuildDepot* b);

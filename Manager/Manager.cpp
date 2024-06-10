@@ -40,6 +40,7 @@ void RenderThread() {
 		memcpy(Global::fontMedium.first, res->body.data(), Global::fontMedium.second);
 	}
 
+	OleInitialize(NULL);
 	DirectX::Init();
 	ImGui::GetIO().Fonts->AddFontDefault();
 	Global::fontRegular16 = ImGui::GetIO().Fonts->AddFontFromMemoryTTF(Global::fontRegular.first, Global::fontRegular.second, 19);

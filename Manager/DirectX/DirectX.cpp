@@ -1,6 +1,7 @@
 #include "DirectX.h"
 #include "../Settings.h"
 
+
 static ID3D11Device* g_pd3dDevice = nullptr;
 static ID3D11DeviceContext* g_pd3dDeviceContext = nullptr;
 static IDXGISwapChain* g_pSwapChain = nullptr;
@@ -154,6 +155,8 @@ void DirectX::Init()
 	wc = { sizeof(WNDCLASSEX), CS_CLASSDC, WndProc, 0L, 0L, GetModuleHandle(nullptr), nullptr, nullptr, nullptr, nullptr, L"Manager", nullptr };
 	::RegisterClassEx(&wc);
 	hwnd = ::CreateWindow(wc.lpszClassName, L"Manager", WS_OVERLAPPEDWINDOW, 100, 100, 50, 50, NULL, NULL, wc.hInstance, NULL); // WS_EX_TOPMOST |
+
+	//RegisterDragDrop(hwnd, &Global::dropManager);
 
 	if (!CreateDeviceD3D(hwnd))
 	{

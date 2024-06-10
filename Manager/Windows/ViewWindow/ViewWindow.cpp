@@ -1,5 +1,33 @@
 #include "ViewWindow.h"
 #include "../../DirectX/D3DX11tex.h"
+#include "../../Global.h"
+
+void CopyFilesRecursive(wstring to, wstring from, wstring parentFolder) {
+	if (fs::is_directory(from))
+	{
+		fs::create_directories(to + L"\\" + fs::relative(from, parentFolder).wstring());
+		for (auto obj : fs::directory_iterator(from)) {
+			CopyFilesRecursive(to, obj.path().wstring(), parentFolder);
+		}
+	}
+	fs::copy(from, to + L"\\" + fs::relative(from, parentFolder).wstring());
+}
+
+void ViewWindow::DropCallback(std::vector<std::wstring> files)
+{
+	if (files.size() == 0)
+		return;
+	if (parsingFiles)
+		return;
+
+	std::wstring parentFolder = fs::path(files[0]).parent_path();
+	for (auto obj : files)
+	{
+		CopyFilesRecursive(this->buildFile->UnpackedDir, obj, parentFolder);
+	}
+
+	RefreshFiles();
+}
 
 bool ViewWindow::IsSelectedChanged() {	// to prevent code dup // upd: imgui has bug that SetNextWindowFocus not working in some cases
 	bool temp = selectedChanged;
@@ -38,8 +66,9 @@ void ViewWindow::ParseFiles(wstring path, DirectoryNode* parentNode) {
 			ParseFiles(objPath.wstring(), newNode);
 			parentNode->Children.push_back(newNode);
 		}
-		else {
-			FilesCount++;
+		else
+		{
+			this->FilesCount++;
 			LoadedFile* loadedFile = new LoadedFile(); // memory leak, but idc ;D
 			loadedFile->FullPath = objPath.wstring();
 
@@ -59,12 +88,14 @@ void ViewWindow::ParseFiles(wstring path, DirectoryNode* parentNode) {
 				loadedFile->FileType = LoadedFileType::Image;
 			else if (ext == ".jpeg")
 				loadedFile->FileType = LoadedFileType::Image;
+			else if (ext == ".webp")
+				loadedFile->FileType = LoadedFileType::Image;
 			else
 				loadedFile->FileType = LoadedFileType::Binary;
 
 
 			ReadBinaryFile(loadedFile->FullPath, &loadedFile->Binary, loadedFile->BinarySize);
-
+			this->FilesSize += loadedFile->BinarySize;
 
 			if (*(BuildDepot::DFileType*)loadedFile->Binary == BuildDepot::DFileType::Encrypted || *(BuildDepot::DFileType*)loadedFile->Binary == BuildDepot::DFileType::EncryptedFile)
 				loadedFile->FileType = LoadedFileType::Encrypted;
@@ -88,7 +119,6 @@ void ViewWindow::ParseFiles(wstring path, DirectoryNode* parentNode) {
 			if (!selectedFile)
 				selectedFile = parentNode->Children.at(parentNode->Children.size() - 1);
 		}
-
 	}
 }
 
@@ -122,8 +152,7 @@ ViewWindow::ViewWindow(wstring buildFilePath, UpdateManager::Build* build) : Win
 		parsingFiles = true;
 		ParseFiles(this->buildFile->UnpackedDir, &depotFiles);
 		parsingFiles = false;
-
-		Log("File opened in " + to_string(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - before).count()) + " milliseconds");
+		Log("Depot opened in " + to_string(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - before).count()) + " milliseconds");
 	}
 }
 
@@ -141,6 +170,8 @@ ViewWindow::ViewWindow(BuildDepot* b) : Window()
 
 void ViewWindow::Close()
 {
+	if (this->buildFile->Build->App->Host->IsAdmin && this->hwnd)
+		RevokeDragDrop(this->hwnd);
 	this->FreeNodes(&this->depotFiles);
 	this->buildFile->UnloadDepot();
 	if (this->createdByFile) {
@@ -156,6 +187,7 @@ void ViewWindow::SetDock(ImGuiID id)
 }
 
 void ViewWindow::RenderFileTree(DirectoryNode* node) {
+
 	if (node == &this->depotFiles)
 		ImGui::Indent();
 	for (int i = 0; i < node->Children.size(); i++) {
@@ -182,6 +214,19 @@ void ViewWindow::RenderFileTree(DirectoryNode* node) {
 	}
 	if (node == &this->depotFiles)
 		ImGui::Unindent();
+
+}
+
+void ViewWindow::RefreshFiles()
+{
+	this->parsingFiles = true;
+	selectedFile = nullptr;
+	this->parsingFilesFuture = std::async(std::launch::async, [&]() {
+		this->FilesCount = 0;
+		this->FreeNodes(&this->depotFiles);
+		this->ParseFiles(this->buildFile->UnpackedDir, &depotFiles);
+		this->parsingFiles = false;
+		});
 }
 
 void ViewWindow::FreeNodes(DirectoryNode* node)
@@ -189,6 +234,7 @@ void ViewWindow::FreeNodes(DirectoryNode* node)
 	for (auto& child : node->Children) {
 		FreeNodes(child);
 	}
+	node->Children.clear();
 	if (node->LoadedFile) {
 		if (node->LoadedFile->Image) {
 			node->LoadedFile->Image->Release();
@@ -201,6 +247,8 @@ void ViewWindow::FreeNodes(DirectoryNode* node)
 		node->LoadedFile->BinaryHex.shrink_to_fit();
 		delete(node->LoadedFile->Binary);
 		delete(node->LoadedFile);
+		node->LoadedFile->Binary = nullptr;
+		node->LoadedFile = nullptr;
 	}
 }
 
@@ -216,6 +264,8 @@ bool ViewWindow::Render()
 	viewClass.ClassId = ImGui::GetID(("viewwindow_" + buildFile->Name).c_str());
 	viewClass.DockingAllowUnclassed = false;
 
+	bool disabled = parsingFiles;
+
 	bool disabledStarted = false; // to prevent stack error when Parsing finish earlier than render
 
 	ImGui::SetNextWindowSize(ImVec2(600, 800), ImGuiCond_FirstUseEver);
@@ -223,12 +273,20 @@ bool ViewWindow::Render()
 		ImGui::Begin(("View [" + buildFile->Name + "]").c_str(), nullptr, ImGuiWindowFlags_MenuBar);
 	else
 		ImGui::Begin(("View [" + buildFile->Name + "]").c_str(), &this->Opened, ImGuiWindowFlags_MenuBar);
-	if (parsingFiles) {
+	if (disabled) {
 		ImGui::ProgressBar(ImGui::GetTime() * -0.2f);
 		ImGui::BeginDisabled();
 		disabledStarted = true;
 	}
 
+	if (this->buildFile->Build->App->Host->IsAdmin && !hwnd && ImGui::GetWindowViewport()->PlatformHandle)
+	{
+		hwnd = (HWND)ImGui::GetWindowViewport()->PlatformHandle;
+		this->dropManager.dropCallback = [&](std::vector<std::wstring> files) {
+			DropCallback(files);
+			};
+		RegisterDragDrop(hwnd, &this->dropManager);
+	}
 	if (!Window::Render()) {
 		ImGui::End();
 		return false;
@@ -238,12 +296,14 @@ bool ViewWindow::Render()
 	{
 		if (ImGui::BeginMenu(this->buildFile->Name.c_str()))
 		{
-			if (this->buildFile->CheckDepot() != UpdateManager::BuildDepot::UnpackResult::Success) // just in case.. :D
+			bool unpackedDirExists = fs::exists(this->buildFile->UnpackedDir);
+			bool depotExists = fs::exists(this->buildFile->FullPath);
+			if (!unpackedDirExists)
 				ImGui::BeginDisabled();
 			if (ImGui::MenuItem("Open unpacked folder")) {
 				OpenFolder(this->buildFile->UnpackedDir);
 			}
-			if (this->buildFile->CheckDepot() != UpdateManager::BuildDepot::UnpackResult::Success)
+			if (!unpackedDirExists)
 				ImGui::EndDisabled();
 			ImGui::Separator();
 			if (!selectedFile)
@@ -254,30 +314,39 @@ bool ViewWindow::Render()
 			if (!selectedFile)
 				ImGui::EndDisabled();
 
+			if (!depotExists)
+				ImGui::BeginDisabled();
 			if (ImGui::MenuItem("Show depot file")) {
 				OpenFolder(fs::path(this->buildFile->FullPath).parent_path().wstring(), this->buildFile->FullPath);
 			}
+			if (!depotExists)
+				ImGui::EndDisabled();
 			ImGui::EndMenu();
+
 		}
 		ImGui::EndMenuBar();
 	}
 
+	ImGui::Columns(2, 0, false);
+	ImGui::SetColumnWidth(0, 315);
 	if (!this->buildFile->Build->App->Host->IsAdmin)
 		ImGui::BeginDisabled();
 	ImGui::BeginChild("##depotinfo", ImVec2(ImGui::GetContentRegionAvail().x, 0), ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_AlwaysAutoResize | ImGuiChildFlags_Border);
 
 	ImGui::Text(("Depot name  : " + this->buildFile->Name).c_str());
 
-
-	ImGui::Text(("Depot size  : " + Utils::SizeToString(this->buildFile->DepotSize)).c_str());
+	if (this->buildFile->DepotSize == 0)
+		ImGui::Text(("Files size  : " + Utils::SizeToString(this->FilesSize)).c_str());
+	else
+		ImGui::Text(("Depot size  : " + Utils::SizeToString(this->buildFile->DepotSize)).c_str());
 	ImGui::Text(("Files count : " + to_string(this->FilesCount)).c_str());
 
-	ImGui::Text(("File Type   :" + string(this->buildFile->Key.IsValid() ? "Encrypted" : "Default")).c_str());
+	ImGui::Text(("File Type   : " + string(this->buildFile->Key.IsValid() ? "Encrypted" : "Default")).c_str());
 
 	ImGui::Text("Key");
-	ImGui::SameLine();
 
 
+	ImGui::SetNextItemWidth(ImGui::CalcTextSize("53836da6-de2f-44b8-8454-1f0ccb4b1e65").x + ImGui::GetStyle().FramePadding.x * ImGui::GetStyle().ItemSpacing.x);
 	if (ImGui::BeginCombo("##selectfiletype", this->buildFile->Key.Name.c_str())) {
 		auto app = this->buildFile->Build->App;
 
@@ -295,19 +364,59 @@ bool ViewWindow::Render()
 	}
 
 	ImGui::EndChild();
+
+	ImGui::BeginChild("##filesexplorer", ImVec2(ImGui::GetContentRegionAvail().x, 0), ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_AlwaysAutoResize | ImGuiChildFlags_Border);
+
+	ImGui::TextDisabled("You can drop files on this window");
+	ImGui::SameLine(ImGui::GetContentRegionAvail().x - 15.f / 2.f);
+
+	//auto buttonPos = ImGui::GetCursorPos();
+	//buttonPos.x += ImGui::GetWindowPos().x;
+	//buttonPos.y += ImGui::GetWindowPos().y;
+
+	//auto buttonCenter = ImVec2(buttonPos.x + 15.f / 2.f, buttonPos.y + 15.f / 2.f);
+
+	if (disabled)
+		ImGui::BeginDisabled();
+	if (ImGui::Button("R##refreshbuttom", ImVec2(15, 15))) {
+		RefreshFiles();
+	}
+	if (disabled)
+		ImGui::EndDisabled();
+	ImGui::SetItemTooltip("Update file tree");
+	{
+		//auto color = ImGui::GetColorU32(ImGui::GetStyle().Colors[ImGuiCol_Text]);
+		//auto draw = ImGui::GetWindowDrawList();
+		//draw->AddCircle(ImVec2(buttonCenter.x, buttonCenter.y), 5, color);
+	}
+	HANDLE handle = ImGui::GetWindowViewport()->PlatformHandle;
+
+	ImGui::EndChild();
+	if (ImGui::BeginDragDropTarget()) {
+		if (ImGui::AcceptDragDropPayload("FILES"))  // or: const ImGuiPayload* payload = ... if you sent a payload in the block above
+		{
+			// draggedFiles is my vector of strings, how you handle your payload is up to you
+			Log("DROPED FILES");
+		}
+		ImGui::EndDragDropTarget();
+	}
+
 	if (!this->buildFile->Build->App->Host->IsAdmin)
 		ImGui::EndDisabled();
 
-	ImGui::Columns(2);
+	ImGui::BeginChild("##treeView", ImVec2(ImGui::GetContentRegionAvail().x, ImGui::GetContentRegionAvail().y), ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_AlwaysAutoResize | ImGuiChildFlags_Border);
+	RenderFileTree(&depotFiles);
+	ImGui::EndChild();
+
+
+
+
 	/*ImGui::SetNextItemWidth(-1);
 	if (ImGui::BeginListBox("##files")) {
 
 		ImGui::EndListBox();
 	}*/
 
-	ImGui::BeginChild("##treeView");
-	RenderFileTree(&depotFiles);
-	ImGui::EndChild();
 
 	ImGui::NextColumn();
 	if (selectedFile && selectedFile->LoadedFile) {
@@ -385,7 +494,7 @@ bool ViewWindow::Render()
 
 	//	ImGui::EndPopup();
 	//}
-	if (parsingFiles || disabledStarted)
+	if (disabled || disabledStarted)
 		ImGui::EndDisabled();
 	ImGui::End();
 	return true;

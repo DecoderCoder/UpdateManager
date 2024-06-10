@@ -47,6 +47,9 @@
     <ClCompile Include="UpdateManager\Utils\base64\base64.cpp">
       <Filter>UpdateManager\Utils\base64</Filter>
     </ClCompile>
+    <ClCompile Include="Global.h" />
+    <ClCompile Include="Settings.cpp" />
+    <ClCompile Include="Windows\AboutWindow\AboutWindow.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Manager.h" />
@@ -113,6 +116,12 @@
     <ClInclude Include="Utils\Utils.h">
       <Filter>Utils</Filter>
     </ClInclude>
+    <ClInclude Include="resource.h" />
+    <ClInclude Include="Settings.h" />
+    <ClInclude Include="Windows\AboutWindow\AboutWindow.h" />
+    <ClInclude Include="Utils\DropManager.h">
+      <Filter>Utils</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="DirectX">
@@ -157,5 +166,11 @@
     <Filter Include="Utils\uuid_v4">
       <UniqueIdentifier>{e957afaa-8a76-4c17-bf74-9b9a18921bd5}</UniqueIdentifier>
     </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="Manager.rc" />
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="Resources\icon.ico" />
   </ItemGroup>
 </Project>

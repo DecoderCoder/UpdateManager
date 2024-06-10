@@ -22,6 +22,8 @@ using namespace std;
 namespace fs = std::filesystem;
 
 namespace UpdateManager {
+	inline bool Logging = true; // let it be, please :o
+
 	class Build;
 	class App;
 	class Host;
@@ -127,7 +129,7 @@ namespace UpdateManager {
 
 		void SetLock(bool lock);
 
-		
+
 	};
 
 	class AccessGroup {
@@ -149,6 +151,7 @@ namespace UpdateManager {
 	private:
 		bool hasDetails = false;
 		bool hasDetailsChecked = false;
+		bool ignoreBuild = false;
 	public:
 		string Id;
 		App* App;
@@ -158,6 +161,7 @@ namespace UpdateManager {
 
 		vector<BuildDepot>* GetDepots();
 
+		bool IsValid();
 		bool HasDetails();
 		bool HasDepot(string name);
 		void AddDepot(string name);
@@ -179,8 +183,6 @@ namespace UpdateManager {
 	class Host {
 	private:
 	public:
-		
-
 		enum class AddAppResponse {
 			AlreadyExists,
 			HasDeleted,

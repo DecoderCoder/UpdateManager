@@ -20,6 +20,7 @@ std::map<UpdateManager::BuildDepot*, std::pair<int, int>> UnpackingProgresses; /
 std::vector<UpdateManager::BuildDepot*> openingBuilds;
 ImGuiID dockId;
 
+int removeOnServer = 0;
 bool modalHostAdditional = false;
 bool modalHostIsAdmin = false;
 
@@ -51,6 +52,7 @@ std::pair<char, int> buildsDots = make_pair(0, 0);
 std::mutex obj;
 std::vector<HANDLE> threads;
 bool downloadOrUpload = false; // false = download | true = upload
+int processingLeft = 0;
 std::vector<UpdateManager::BuildDepot>* processingDepots = nullptr; // depots | left
 
 void processDepotsThread() {
@@ -75,6 +77,7 @@ void processDepotsThread() {
 		else {
 			depot.DownloadDepot();
 		}
+		processingLeft--;
 	}
 }
 
@@ -171,7 +174,7 @@ bool MainWindow::Render()
 		style->FrameBorderSize = 1;
 	}
 
-	style->WindowMinSize = ImVec2(500, 500);
+	style->WindowMinSize = ImVec2(650, 500);
 	style->WindowTitleAlign = ImVec2(0.5f, 0.5f);
 	style->AntiAliasedFill = true;
 	style->AntiAliasedLines = true;
@@ -180,7 +183,21 @@ bool MainWindow::Render()
 	bool disableAll = false;
 	bool disabled = false;
 
-	ImGui::SetNextWindowSize(ImVec2(1000, 700), ImGuiCond_FirstUseEver);
+	if (ImGui::GetTopMostPopupModal()) {
+		//ImGui::PushStyleColor(ImGuiCol_ModalWindowDimBg, ImVec4(0, 0, 0, 0));
+		const char* text = "If a window stuck behind another window\r\nPress ESC";
+		auto textSize = ImGui::CalcTextSize(text);
+		ImGui::PushStyleVar(ImGuiStyleVar_WindowMinSize, ImVec2(0, 0));
+		ImGui::SetNextWindowPos(ImVec2(GetSystemMetrics(SM_CXSCREEN) / 2 - textSize.x / 2 - style->FramePadding.x, 30));
+		ImGui::SetNextWindowSize(ImVec2(textSize.x + style->FramePadding.x * 2 + style->WindowPadding.y * 2, textSize.y + style->WindowPadding.y * 2 + style->FramePadding.y * 2 + ImGui::GetFontSize() + style->FramePadding.y * 2));
+		ImGui::Begin("Stuck Helper##stuckWindow", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoInputs);
+		ImGui::Text(text);
+		ImGui::End();
+		ImGui::PopStyleVar();
+		//ImGui::PopStyleColor();
+	}
+
+
 	ImGui::Begin(_PROJECTNAME, &this->Opened, ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoDocking);
 	dockId = ImGui::GetID("viewwindows_dock");
 	for (auto obj : UnpackingProgresses) {
@@ -189,19 +206,18 @@ bool MainWindow::Render()
 	}
 	ImGui::SetNextItemWidth(-1);
 
-
 	if (DownloadingCount > 0) {
 		ImGui::SetNextItemWidth(-1);
 		ImGui::ProgressBar(ImGui::GetTime() * -0.2f);
 	}
 
-	if (processingDepots) {
+	if (processingLeft) {
 		disableAll = true;
 		float count = UpdateManager::GetHosts()->at(selectedHost).GetApps()->at(selectedApp).GetBuilds()->at(selectedBuild).GetDepots()->size();
 
-		ImGui::ProgressBar((count - (float)processingDepots->size()) / (float)count);
+		ImGui::ProgressBar((count - (float)processingLeft) / (float)count);
 
-		if (processingDepots->size() == 0) {
+		if (processingDepots != nullptr && processingDepots->size() == 0) {
 			delete(processingDepots);
 			processingDepots = nullptr;
 		}
@@ -222,12 +238,12 @@ bool MainWindow::Render()
 	{
 		if (ImGui::BeginMenu(_PROJECTNAME))
 		{
-			if (processingDepots)
+			if (processingLeft)
 				ImGui::BeginDisabled();
 			if (ImGui::MenuItem("Settings")) {
 				openSettings = true;
 			}
-			if (processingDepots)
+			if (processingLeft)
 				ImGui::EndDisabled();
 			if (ImGui::MenuItem("Keys Manager")) {
 				KeyManagerWindow* keyManagerWindow = nullptr;
@@ -288,7 +304,7 @@ bool MainWindow::Render()
 	App* pSelectedApp = nullptr;
 	Build* pSelectedBuild = nullptr;
 
-	ImGui::Columns(3);
+	ImGui::Columns(3, 0, false);
 	if (disableAll)
 		ImGui::BeginDisabled();
 
@@ -585,34 +601,55 @@ bool MainWindow::Render()
 	}
 	ImGui::SameLine();
 	if (ImGui::Button("Remove depot on the server", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
+		removeOnServer = GetTickCount() + 3000;
 		ImGui::OpenPopup("Remove Depot##depot", true);
 	}
 	if (disableAll || disabled)
 		ImGui::EndDisabled();
 
 	if (ImGui::BeginPopupModal("Remove Depot##depot", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) {
+		if (GetAsyncKeyState(VK_ESCAPE))
+			ImGui::CloseCurrentPopup();
 		auto depots = UpdateManager::GetHosts()->at(selectedHost).GetApps()->at(selectedApp).GetBuilds()->at(selectedBuild).GetDepots();
-
-		ImGui::Text(" Are you sure you want to\r\n remove selected depot(s)?");
-		if (ImGui::Button("Remove", ImVec2(100, 0))) {
+		if (removeOnServer)
+			ImGui::Text(" Are you sure you want to\r\n remove selected depot(s)\r\n on the server?");
+		else
+			ImGui::Text(" Are you sure you want to\r\n remove selected depot(s)?");
+		string removeButtonText = "Remove";
+		if (removeOnServer) {
+			int timeLeft = removeOnServer - GetTickCount();
+			timeLeft = max(0, timeLeft);
+			if (timeLeft)
+				removeButtonText += " (" + to_string(timeLeft / 1000 + 1) + ")";
+			disabled = timeLeft;
+		}
+		if (disabled)
+			ImGui::BeginDisabled();
+		if (ImGui::Button(removeButtonText.c_str(), ImVec2(100, 0))) {
 			for (auto obj : selectedDepots) {
-				UpdateManager::GetHosts()->at(selectedHost).GetApps()->at(selectedApp).GetBuilds()->at(selectedBuild).RemoveDepot(depots->at(obj).Name);
+				UpdateManager::GetHosts()->at(selectedHost).GetApps()->at(selectedApp).GetBuilds()->at(selectedBuild).RemoveDepot(depots->at(obj).Name, removeOnServer);
 			}
 
 			selectedDepots.clear();
 			ImGui::CloseCurrentPopup();
+			removeOnServer = 0;
 		}
+		if (disabled)
+			ImGui::EndDisabled();
 		ImGui::SameLine();
 		if (ImGui::Button("Cancel", ImVec2(100, 0))) {
 			ImGui::CloseCurrentPopup();
+			removeOnServer = 0;
 		}
 		ImGui::EndPopup();
 	}
 
 	if (ImGui::BeginPopupModal("Add Depot##depot", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) {
+		if (GetAsyncKeyState(VK_ESCAPE))
+			ImGui::CloseCurrentPopup();
 		string inputDepotName = string(inputDepotNameBuffer);
 		ImGui::Text(" Depot Name");
-		ImGui::InputText("##depotname", inputDepotNameBuffer, sizeof(inputDepotNameBuffer));
+		ImGui::InputText("##depotname", inputDepotNameBuffer, sizeof(inputDepotNameBuffer), ImGuiInputTextFlags_CharsNoBlank | ImGuiInputTextFlags_CallbackCharFilter, [](ImGuiInputTextCallbackData* data) { if (data->EventChar >= 'a' && data->EventChar <= 'z' || data->EventChar >= 'A' && data->EventChar <= 'Z' || data->EventChar >= '0' && data->EventChar <= '9') return 0; return 1; });
 
 		disabled = inputDepotName.size() == 0;
 		if (disabled)
@@ -663,7 +700,7 @@ bool MainWindow::Render()
 		auto depots = new std::vector<UpdateManager::BuildDepot>(*UpdateManager::GetHosts()->at(selectedHost).GetApps()->at(selectedApp).GetBuilds()->at(selectedBuild).GetDepots());
 
 		processingDepots = depots;
-
+		processingLeft = processingDepots->size();
 		for (int i = 0; i < min(depots->size(), Settings::ThreadsCount); i++) {
 			threads.push_back(CreateThread(0, 0, (LPTHREAD_START_ROUTINE)processDepotsThread, 0, 0, 0));
 		}
@@ -682,7 +719,10 @@ bool MainWindow::Render()
 
 	//ImGui::SetNextWindowSize(ImVec2(1000, 700), ImGuiCond_FirstUseEver);
 	if (ImGui::BeginPopupModal("Settings##mainwindow", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) {
+		if (GetAsyncKeyState(VK_ESCAPE))
+			ImGui::CloseCurrentPopup();
 		ImGui::Checkbox("Low RAM mode", &Settings::LowRAM);
+		ImGui::SetItemTooltip("Programm will not hold depots in memory (may cause GUI freeze)");
 		ImGui::Checkbox("Dark Mode", &Settings::DarkMode);
 		ImGui::BeginDisabled();
 		ImGui::Checkbox("Use SSL", &Settings::UseSSL);
@@ -708,8 +748,10 @@ bool MainWindow::Render()
 	}
 
 	if (ImGui::BeginPopupModal("Add Build##build", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) {
+		if (GetAsyncKeyState(VK_ESCAPE))
+			ImGui::CloseCurrentPopup();
 		bool close = false;
-		ImGui::Text(" Build Name");
+		ImGui::Text(" Build Id");
 		ImGui::InputText("##buildname", inputBuildNameBuffer, sizeof(inputBuildNameBuffer), ImGuiInputTextFlags_CharsDecimal);
 
 		string inputBuildName = string(inputBuildNameBuffer);
@@ -736,10 +778,12 @@ bool MainWindow::Render()
 		ImGui::EndPopup();
 	}
 	if (ImGui::BeginPopupModal("Add App##app", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) {
+		if (GetAsyncKeyState(VK_ESCAPE))
+			ImGui::CloseCurrentPopup();
 		bool close = false;
 
 		ImGui::Text(" App Name");
-		ImGui::InputText("##appname", inputAppNameBuffer, sizeof(inputAppNameBuffer));
+		ImGui::InputText("##appname", inputAppNameBuffer, sizeof(inputAppNameBuffer), ImGuiInputTextFlags_CharsNoBlank | ImGuiInputTextFlags_CallbackCharFilter, [](ImGuiInputTextCallbackData* data) { if (data->EventChar >= 'a' && data->EventChar <= 'z' || data->EventChar >= 'A' && data->EventChar <= 'Z' || data->EventChar >= '0' && data->EventChar <= '9') return 0; return 1; });
 
 		if (UpdateManager::GetHosts()->at(selectedHost).IsAdmin) {
 			ImGui::Text("Access Group");
@@ -786,6 +830,8 @@ bool MainWindow::Render()
 		}
 
 		if (ImGui::BeginPopupModal("Already exists##app2", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) {
+			if (GetAsyncKeyState(VK_ESCAPE))
+				ImGui::CloseCurrentPopup();
 			ImGui::Text(" App with this name is deleted.\r\nDo you want to restore it or create new?");
 			if (ImGui::Button("Restore", ImVec2(-1, 0))) {
 				UpdateManager::GetHosts()->at(selectedHost).AddApp(inputAppName, comboBoxAppAccessGroup, 0);
@@ -801,6 +847,8 @@ bool MainWindow::Render()
 			ImGui::EndPopup();
 		}
 		if (ImGui::BeginPopupModal("Already Exists##app", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) {
+			if (GetAsyncKeyState(VK_ESCAPE))
+				ImGui::CloseCurrentPopup();
 			ImGui::Text("App with this name already exists");
 			if (ImGui::Button("OK")) {
 				ImGui::CloseCurrentPopup();
@@ -812,6 +860,8 @@ bool MainWindow::Render()
 		ImGui::EndPopup();
 	}
 	if (ImGui::BeginPopupModal("Remove App##app", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) {
+		if (GetAsyncKeyState(VK_ESCAPE))
+			ImGui::CloseCurrentPopup();
 		ImGui::Text(" Are you sure you want to remove app?");
 		if (ImGui::Button("Remove", ImVec2(100, 0))) {
 			UpdateManager::GetHosts()->at(selectedHost).RemoveApp(UpdateManager::GetHosts()->at(selectedHost).GetApps()->at(selectedApp).Id);
@@ -828,8 +878,10 @@ bool MainWindow::Render()
 		ImGui::EndPopup();
 	}
 	if (ImGui::BeginPopupModal("Add Host", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) {
+		if (GetAsyncKeyState(VK_ESCAPE))
+			ImGui::CloseCurrentPopup();
 		ImGui::Text(" Host");
-		ImGui::InputText("##hostinput", inputHostNameBuffer, sizeof(inputHostNameBuffer));
+		ImGui::InputText("##hostinput", inputHostNameBuffer, sizeof(inputHostNameBuffer), ImGuiInputTextFlags_CharsNoBlank | ImGuiInputTextFlags_CallbackCharFilter, [](ImGuiInputTextCallbackData* data) { if (data->EventChar >= 'a' && data->EventChar <= 'z' || data->EventChar >= 'A' && data->EventChar <= 'Z' || data->EventChar >= '0' && data->EventChar <= '9' || data->EventChar == '-' || data->EventChar == '_' || data->EventChar == '.') return 0; return 1; });
 		{
 			const char* depotsText;
 			if (Settings::UseSSL)
@@ -903,6 +955,8 @@ bool MainWindow::Render()
 		ImGui::EndPopup();
 	}
 	if (ImGui::BeginPopupModal("Remove Host##host", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) {
+		if (GetAsyncKeyState(VK_ESCAPE))
+			ImGui::CloseCurrentPopup();
 		ImGui::Text(" Do you want to remove host?");
 		if (ImGui::Button("Remove", ImVec2(100, 0))) {
 			UpdateManager::RemoveHost(UpdateManager::Hosts[selectedHost].Uri);
