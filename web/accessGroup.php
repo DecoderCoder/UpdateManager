@@ -29,28 +29,46 @@ switch ($method) {
 
             $accessGroupValue = urlencode($_GET['accessGroup']);
             $resp = $mysql->query('SELECT * FROM `accessGroups` WHERE `value` = \'' . $accessGroupValue . '\'');
-            if($resp->num_rows > 0){
+            if ($resp->num_rows > 0) {
                 $accessGroupId = $resp->fetch_all(MYSQLI_ASSOC)[0]['id'];
-                $mysql->query('INSERT INTO `accessKeys` (`accessGroupId`, `name`, `value`) VALUES ('.$accessGroupId.', \''.$name.'\', \''.$value.'\')');
+                $mysql->query('INSERT INTO `accessKeys` (`accessGroupId`, `name`, `value`) VALUES (' . $accessGroupId . ', \'' . $name . '\', \'' . $value . '\')');
             }
         }
         break;
     }
 }
 
-foreach ($mysql->query('SELECT * FROM `accessGroups`') as $row) {
-    $group = [];
-    $group['name'] = $row['name'];
-    $group['value'] = $row['value'];
-    $group["keys"] = [];
-    foreach ($mysql->query('SELECT * FROM `accessKeys` WHERE `accessGroupId` = ' . $row['id']) as $keyRow) {
-        $key = [];
-        $key['name'] = $keyRow['name'];
-        $key['value'] = $keyRow['value'];
-        $group["keys"][] = $key;
+if (!empty($_GET['accessGroup'])) {
+    $resp = $mysql->query('SELECT * FROM `accessGroups` WHERE `value` = \'' . urlencode($_GET['accessGroup']) . '\'');
+    if ($resp->num_rows > 0) {
+
+        $output = [];
+        $output['accessGroup'] = $_GET['accessGroup'];
+        $output['keys'] = [];
+        $resp = $resp->fetch_all(MYSQLI_ASSOC)[0];
+        foreach ($mysql->query('SELECT * FROM `accessKeys` WHERE `accessGroupId` = ' . $resp['id']) as $keyRow) {
+            $key = [];
+            $key['name'] = $keyRow['name'];
+            $key['key'] = $keyRow['value'];
+            $output['keys'][] = $key;
+        }
     }
-    $output['accessGroups'][] = $group;
+} else {
+    foreach ($mysql->query('SELECT * FROM `accessGroups`') as $row) {
+        $group = [];
+        $group['name'] = $row['name'];
+        $group['value'] = $row['value'];
+        $group["keys"] = [];
+        foreach ($mysql->query('SELECT * FROM `accessKeys` WHERE `accessGroupId` = ' . $row['id']) as $keyRow) {
+            $key = [];
+            $key['name'] = $keyRow['name'];
+            $key['value'] = $keyRow['value'];
+            $group["keys"][] = $key;
+        }
+        $output['accessGroups'][] = $group;
+    }
 }
+
 
 header('Content-Type: application/json; charset=utf-8');
 print_r(json_encode($output, JSON_PRETTY_PRINT));

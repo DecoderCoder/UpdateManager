@@ -55,7 +55,6 @@ if (!empty($_GET['method'])) {
         $mysql->query('INSERT INTO `depots` (`buildId`, `filename`, `uuid`, `sha`, `keyId`, `size`) VALUES (' . $build['id'] . ', \'' . $depotName . '\', \'' . $uuid . '\', \'' . bin2hex(hash('sha256', $file, true)) . '\', ' . $key . ', ' . strlen($file) . ')');
     }
 } else {
-    print_r('hello');
     $depotUuid = urlencode($_GET['uuid']);
     $depot = $mysql->query('SELECT * FROM `depots` WHERE `filename` = \'' . $depotName . '\' AND `uuid` = \'' . $depotUuid . '\'');
     if ($depot->num_rows > 0) {
