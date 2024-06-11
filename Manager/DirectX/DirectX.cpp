@@ -242,6 +242,10 @@ void DirectX::Render()
 	//	((void(*)())RenderFunc)(); // 	typedef void(*funcName)();
 
 	for (int i = 0; i < DirectX::Windows.size(); i++) {
+		if (DirectX::Windows[i]->Opened == false) {
+			DirectX::Windows.erase(DirectX::Windows.begin() + i--);
+			continue;
+		}
 		if (DirectX::Windows[i]->Opened)
 			DirectX::Windows[i]->Render();
 	}

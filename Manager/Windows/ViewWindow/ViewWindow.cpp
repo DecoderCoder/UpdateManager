@@ -269,233 +269,221 @@ bool ViewWindow::Render()
 	bool disabledStarted = false; // to prevent stack error when Parsing finish earlier than render
 
 	ImGui::SetNextWindowSize(ImVec2(600, 800), ImGuiCond_FirstUseEver);
-	if (parsingFiles) // prevent from closing when loading to exclude exception
-		ImGui::Begin(("View [" + buildFile->Name + "]").c_str(), nullptr, ImGuiWindowFlags_MenuBar);
+	bool* opened;
+	if (parsingFiles)
+		opened = nullptr;
 	else
-		ImGui::Begin(("View [" + buildFile->Name + "]").c_str(), &this->Opened, ImGuiWindowFlags_MenuBar);
-	if (disabled) {
-		ImGui::ProgressBar(ImGui::GetTime() * -0.2f);
-		ImGui::BeginDisabled();
-		disabledStarted = true;
-	}
+		opened = &this->Opened;
 
-	if (this->buildFile->Build->App->Host->IsAdmin && !hwnd && ImGui::GetWindowViewport()->PlatformHandle)
-	{
-		hwnd = (HWND)ImGui::GetWindowViewport()->PlatformHandle;
-		this->dropManager.dropCallback = [&](std::vector<std::wstring> files) {
-			DropCallback(files);
-			};
-		RegisterDragDrop(hwnd, &this->dropManager);
-	}
-	if (!Window::Render()) {
-		ImGui::End();
-		return false;
-	}
+	if (ImGui::Begin(("View [" + buildFile->Name + "]").c_str(), opened, ImGuiWindowFlags_MenuBar)) {
+		if (disabled) {
+			ImGui::ProgressBar(ImGui::GetTime() * -0.2f);
+			ImGui::BeginDisabled();
+			disabledStarted = true;
+		}
 
-	if (ImGui::BeginMenuBar())
-	{
-		if (ImGui::BeginMenu(this->buildFile->Name.c_str()))
+		if (this->buildFile->Build->App->Host->IsAdmin && !hwnd && ImGui::GetWindowViewport()->PlatformHandle)
 		{
-			bool unpackedDirExists = fs::exists(this->buildFile->UnpackedDir);
-			bool depotExists = fs::exists(this->buildFile->FullPath);
-			if (!unpackedDirExists)
-				ImGui::BeginDisabled();
-			if (ImGui::MenuItem("Open unpacked folder")) {
-				OpenFolder(this->buildFile->UnpackedDir);
-			}
-			if (!unpackedDirExists)
-				ImGui::EndDisabled();
-			ImGui::Separator();
-			if (!selectedFile)
-				ImGui::BeginDisabled();
-			if (ImGui::MenuItem("Show selected file")) {
-				OpenFolder(this->buildFile->UnpackedDir, selectedFile->FullPath);
-			}
-			if (!selectedFile)
-				ImGui::EndDisabled();
-
-			if (!depotExists)
-				ImGui::BeginDisabled();
-			if (ImGui::MenuItem("Show depot file")) {
-				OpenFolder(fs::path(this->buildFile->FullPath).parent_path().wstring(), this->buildFile->FullPath);
-			}
-			if (!depotExists)
-				ImGui::EndDisabled();
-			ImGui::EndMenu();
-
+			hwnd = (HWND)ImGui::GetWindowViewport()->PlatformHandle;
+			this->dropManager.dropCallback = [&](std::vector<std::wstring> files) {
+				DropCallback(files);
+				};
+			RegisterDragDrop(hwnd, &this->dropManager);
 		}
-		ImGui::EndMenuBar();
-	}
-
-	ImGui::Columns(2, 0, false);
-	ImGui::SetColumnWidth(0, 315);
-	if (!this->buildFile->Build->App->Host->IsAdmin)
-		ImGui::BeginDisabled();
-	ImGui::BeginChild("##depotinfo", ImVec2(ImGui::GetContentRegionAvail().x, 0), ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_AlwaysAutoResize | ImGuiChildFlags_Border);
-
-	ImGui::Text(("Depot name  : " + this->buildFile->Name).c_str());
-
-	if (this->buildFile->DepotSize == 0)
-		ImGui::Text(("Files size  : " + Utils::SizeToString(this->FilesSize)).c_str());
-	else
-		ImGui::Text(("Depot size  : " + Utils::SizeToString(this->buildFile->DepotSize)).c_str());
-	ImGui::Text(("Files count : " + to_string(this->FilesCount)).c_str());
-
-	ImGui::Text(("File Type   : " + string(this->buildFile->Key.IsValid() ? "Encrypted" : "Default")).c_str());
-
-	ImGui::Text("Key");
-
-
-	ImGui::SetNextItemWidth(ImGui::CalcTextSize("53836da6-de2f-44b8-8454-1f0ccb4b1e65").x + ImGui::GetStyle().FramePadding.x * ImGui::GetStyle().ItemSpacing.x);
-	if (ImGui::BeginCombo("##selectfiletype", this->buildFile->Key.Name.c_str())) {
-		auto app = this->buildFile->Build->App;
-
-		if (ImGui::Selectable("##emptykey")) {
-			this->buildFile->Key = UpdateManager::KeyManager::EmptyKey;
+		if (!Window::Render()) {
+			ImGui::End();
+			return false;
 		}
 
-		for (int i = 0; i < app->AccessGroup->Keys.size(); i++) {
-			if (ImGui::Selectable(app->AccessGroup->Keys[i].Name.c_str())) {
-				this->buildFile->Key = app->AccessGroup->Keys[i];
-			}
-		}
-
-		ImGui::EndCombo();
-	}
-
-	ImGui::EndChild();
-
-	ImGui::BeginChild("##filesexplorer", ImVec2(ImGui::GetContentRegionAvail().x, 0), ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_AlwaysAutoResize | ImGuiChildFlags_Border);
-
-	ImGui::TextDisabled("You can drop files on this window,\r\nthey will be copied to the root dir");
-	ImGui::SameLine(ImGui::GetContentRegionAvail().x - 15.f / 2.f);
-
-	//auto buttonPos = ImGui::GetCursorPos();
-	//buttonPos.x += ImGui::GetWindowPos().x;
-	//buttonPos.y += ImGui::GetWindowPos().y;
-
-	//auto buttonCenter = ImVec2(buttonPos.x + 15.f / 2.f, buttonPos.y + 15.f / 2.f);
-
-	if (disabled)
-		ImGui::BeginDisabled();
-	if (ImGui::Button("R##refreshbuttom", ImVec2(15, 30))) {
-		RefreshFiles();
-	}
-	if (disabled)
-		ImGui::EndDisabled();
-	ImGui::SetItemTooltip("Update file tree");
-	{
-		//auto color = ImGui::GetColorU32(ImGui::GetStyle().Colors[ImGuiCol_Text]);
-		//auto draw = ImGui::GetWindowDrawList();
-		//draw->AddCircle(ImVec2(buttonCenter.x, buttonCenter.y), 5, color);
-	}
-	HANDLE handle = ImGui::GetWindowViewport()->PlatformHandle;
-
-	ImGui::EndChild();
-	if (ImGui::BeginDragDropTarget()) {
-		if (ImGui::AcceptDragDropPayload("FILES"))  // or: const ImGuiPayload* payload = ... if you sent a payload in the block above
+		if (ImGui::BeginMenuBar())
 		{
-			// draggedFiles is my vector of strings, how you handle your payload is up to you
-			Log("DROPED FILES");
+			if (ImGui::BeginMenu(this->buildFile->Name.c_str()))
+			{
+				bool unpackedDirExists = fs::exists(this->buildFile->UnpackedDir);
+				bool depotExists = fs::exists(this->buildFile->FullPath);
+				if (!unpackedDirExists)
+					ImGui::BeginDisabled();
+				if (ImGui::MenuItem("Open unpacked folder")) {
+					OpenFolder(this->buildFile->UnpackedDir);
+				}
+				if (!unpackedDirExists)
+					ImGui::EndDisabled();
+				ImGui::Separator();
+				if (!selectedFile)
+					ImGui::BeginDisabled();
+				if (ImGui::MenuItem("Show selected file")) {
+					OpenFolder(this->buildFile->UnpackedDir, selectedFile->FullPath);
+				}
+				if (!selectedFile)
+					ImGui::EndDisabled();
+
+				if (!depotExists)
+					ImGui::BeginDisabled();
+				if (ImGui::MenuItem("Show depot file")) {
+					OpenFolder(fs::path(this->buildFile->FullPath).parent_path().wstring(), this->buildFile->FullPath);
+				}
+				if (!depotExists)
+					ImGui::EndDisabled();
+				ImGui::EndMenu();
+
+			}
+			ImGui::EndMenuBar();
 		}
-		ImGui::EndDragDropTarget();
+
+		ImGui::Columns(2, 0, false);
+		ImGui::SetColumnWidth(0, 315);
+		if (!this->buildFile->Build->App->Host->IsAdmin)
+			ImGui::BeginDisabled();
+		if (ImGui::BeginChild("##depotinfo", ImVec2(ImGui::GetContentRegionAvail().x, 0), ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_AlwaysAutoResize | ImGuiChildFlags_Border)) {
+			ImGui::Text(("Depot name  : " + this->buildFile->Name).c_str());
+
+			if (this->buildFile->DepotSize == 0)
+				ImGui::Text(("Files size  : " + Utils::SizeToString(this->FilesSize)).c_str());
+			else
+				ImGui::Text(("Depot size  : " + Utils::SizeToString(this->buildFile->DepotSize)).c_str());
+			ImGui::Text(("Files count : " + to_string(this->FilesCount)).c_str());
+
+			ImGui::Text(("File Type   : " + string(this->buildFile->Key.IsValid() ? "Encrypted" : "Default")).c_str());
+
+			ImGui::Text("Key");
+
+
+			ImGui::SetNextItemWidth(ImGui::CalcTextSize("53836da6-de2f-44b8-8454-1f0ccb4b1e65").x + ImGui::GetStyle().FramePadding.x * ImGui::GetStyle().ItemSpacing.x);
+			if (ImGui::BeginCombo("##selectfiletype", this->buildFile->Key.Name.c_str())) {
+				auto app = this->buildFile->Build->App;
+
+				if (ImGui::Selectable("##emptykey")) {
+					this->buildFile->Key = UpdateManager::KeyManager::EmptyKey;
+				}
+
+				for (int i = 0; i < app->AccessGroup->Keys.size(); i++) {
+					if (ImGui::Selectable(app->AccessGroup->Keys[i].Name.c_str())) {
+						this->buildFile->Key = app->AccessGroup->Keys[i];
+					}
+				}
+
+				ImGui::EndCombo();
+			}
+		}
+		ImGui::EndChild();
+
+		if (ImGui::BeginChild("##filesexplorer", ImVec2(ImGui::GetContentRegionAvail().x, 0), ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_AlwaysAutoResize | ImGuiChildFlags_Border)) {
+			ImGui::TextDisabled("You can drop files on this window,\r\nthey will be copied to the root dir");
+			ImGui::SameLine(ImGui::GetContentRegionAvail().x - 15.f / 2.f);
+
+			//auto buttonPos = ImGui::GetCursorPos();
+			//buttonPos.x += ImGui::GetWindowPos().x;
+			//buttonPos.y += ImGui::GetWindowPos().y;
+
+			//auto buttonCenter = ImVec2(buttonPos.x + 15.f / 2.f, buttonPos.y + 15.f / 2.f);
+
+			if (disabled)
+				ImGui::BeginDisabled();
+			if (ImGui::Button("R##refreshbuttom", ImVec2(15, 30))) {
+				RefreshFiles();
+			}
+			if (disabled)
+				ImGui::EndDisabled();
+			ImGui::SetItemTooltip("Update file tree");
+		}
+		ImGui::EndChild();
+
+		if (!this->buildFile->Build->App->Host->IsAdmin)
+			ImGui::EndDisabled();
+
+		if (ImGui::BeginChild("##treeView", ImVec2(ImGui::GetContentRegionAvail().x, ImGui::GetContentRegionAvail().y), ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_AlwaysAutoResize | ImGuiChildFlags_Border)) {
+			RenderFileTree(&depotFiles);
+		}
+		ImGui::EndChild();
+
+		/*ImGui::SetNextItemWidth(-1);
+		if (ImGui::BeginListBox("##files")) {
+
+			ImGui::EndListBox();
+		}*/
+
+
+		ImGui::NextColumn();
+		if (selectedFile && selectedFile->LoadedFile) {
+			if (selectedFile->LoadedFile->FileType == LoadedFileType::Encrypted) {
+				auto prevCursor = ImGui::GetCursorPos();
+				ImGui::SetCursorPos(ImVec2(ImGui::GetContentRegionAvail().x * 0.5f - 75 + ImGui::GetCursorPos().x, ImGui::GetContentRegionAvail().y * 0.5f - 20));
+				if (ImGui::Button("Unpack packed file", ImVec2(150, 40))) {
+					ViewWindow* packedFile = new ViewWindow(selectedFile->FullPath, this->buildFile->Build);
+					packedFile->Show();
+				}
+				ImGui::SetCursorPos(prevCursor);
+			}
+			else {
+				ImGui::DockSpace(filesDock, ImVec2(0, 0), 0, &viewClass);
+
+				// Text file
+				ImGui::SetNextWindowDockID(filesDock, ImGuiCond_Once);
+				ImGui::SetNextWindowClass(&viewClass);
+				if (selectedFile->LoadedFile->FileType == LoadedFileType::Text && IsSelectedChanged()) {
+					ImGui::SetNextWindowFocus();
+				}
+				if (ImGui::Begin(("Text##textTab_" + buildFile->Name).c_str())) {
+					if (selectedFile && this->selectedFile->LoadedFile->Text == "")
+						this->selectedFile->LoadedFile->Text = string(this->selectedFile->LoadedFile->Binary, this->selectedFile->LoadedFile->BinarySize);
+					ImGui::InputTextMultiline(("##text_" + buildFile->Name).c_str(), (char*)selectedFile->LoadedFile->Text.c_str(), selectedFile->LoadedFile->Text.size(), ImVec2(-1, -1), ImGuiInputTextFlags_ReadOnly);
+				}
+				ImGui::End();
+				// Image file
+				ImGui::SetNextWindowDockID(filesDock, ImGuiCond_Once);
+				ImGui::SetNextWindowClass(&viewClass);
+				if (selectedFile->LoadedFile->FileType == LoadedFileType::Image && IsSelectedChanged()) {
+					ImGui::SetNextWindowFocus();
+				}
+				if (ImGui::Begin(("Image##image_" + buildFile->Name).c_str())) {
+					if (selectedFile->LoadedFile->Image == nullptr)
+						DirectX::LoadTextureFromFile(selectedFile->LoadedFile->FullPath, selectedFile->LoadedFile->Image);
+
+					if (selectedFile->LoadedFile->Image && DirectX::LoadedImages.find(selectedFile->LoadedFile->Image) != DirectX::LoadedImages.end()) {
+						DirectX::LoadedImage info = DirectX::LoadedImages[selectedFile->LoadedFile->Image]; // there always will be info about image
+						float aspect = (float)info.Width / (float)max(info.Height, 1);
+						ImGui::Image(selectedFile->LoadedFile->Image, ImVec2(ImGui::GetContentRegionAvail().x, ImGui::GetContentRegionAvail().x / aspect));
+					}
+				}
+				ImGui::End();
+
+				// Binary file
+				ImGui::SetNextWindowDockID(filesDock, ImGuiCond_Once);
+				ImGui::SetNextWindowClass(&viewClass);
+				if (selectedFile->LoadedFile->FileType == LoadedFileType::Binary && IsSelectedChanged()) {
+					ImGui::SetNextWindowFocus();
+				}
+				if (ImGui::Begin(("Binary##binary_" + buildFile->Name).c_str())) {
+					if (selectedFile && this->selectedFile->LoadedFile->BinaryHex == "")
+						this->selectedFile->LoadedFile->BinaryHex = ToHex2(this->selectedFile->LoadedFile->Binary, this->selectedFile->LoadedFile->BinarySize, true);
+					ImGui::InputTextMultiline(("##binary_" + buildFile->Name).c_str(), (char*)selectedFile->LoadedFile->BinaryHex.c_str(), selectedFile->LoadedFile->BinaryHex.size(), ImVec2(-1, ImGui::GetContentRegionAvail().y - 30), ImGuiInputTextFlags_ReadOnly);
+					if (ImGui::InputInt("Current row", &this->currentBinaryRow)) {
+						if (this->currentBinaryRow < 0)
+							this->currentBinaryRow = 0;
+
+						ImGuiContext& g = *GImGui;
+						const char* child_window_name = NULL;
+						ImFormatStringToTempBuffer(&child_window_name, NULL, "%s/%s_%08X", g.CurrentWindow->Name, ("##binary_" + buildFile->Name).c_str(), ImGui::GetID(("##binary_" + buildFile->Name).c_str()));
+						ImGuiWindow* child_window = ImGui::FindWindowByName(child_window_name);
+						ImGui::SetScrollY(child_window, this->currentBinaryRow * ImGui::CalcTextSize("a").y + 3);
+
+					}
+				}
+				ImGui::End();
+			}
+		}
+		ImGui::Columns(1);
+
+		//ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+		//ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+		//if (ImGui::BeginPopupModal("File is missing")) {
+
+		//	ImGui::EndPopup();
+		//}
+		if (disabled || disabledStarted)
+			ImGui::EndDisabled();
+
 	}
-
-	if (!this->buildFile->Build->App->Host->IsAdmin)
-		ImGui::EndDisabled();
-
-	ImGui::BeginChild("##treeView", ImVec2(ImGui::GetContentRegionAvail().x, ImGui::GetContentRegionAvail().y), ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_AlwaysAutoResize | ImGuiChildFlags_Border);
-	RenderFileTree(&depotFiles);
-	ImGui::EndChild();
-
-
-
-
-	/*ImGui::SetNextItemWidth(-1);
-	if (ImGui::BeginListBox("##files")) {
-
-		ImGui::EndListBox();
-	}*/
-
-
-	ImGui::NextColumn();
-	if (selectedFile && selectedFile->LoadedFile) {
-		if (selectedFile->LoadedFile->FileType == LoadedFileType::Encrypted) {
-			auto prevCursor = ImGui::GetCursorPos();
-			ImGui::SetCursorPos(ImVec2(ImGui::GetContentRegionAvail().x * 0.5f - 75 + ImGui::GetCursorPos().x, ImGui::GetContentRegionAvail().y * 0.5f - 20));
-			if (ImGui::Button("Unpack packed file", ImVec2(150, 40))) {
-				ViewWindow* packedFile = new ViewWindow(selectedFile->FullPath, this->buildFile->Build);
-				packedFile->Show();
-			}
-			ImGui::SetCursorPos(prevCursor);
-		}
-		else {
-			ImGui::DockSpace(filesDock, ImVec2(0, 0), 0, &viewClass);
-
-			// Text file
-			ImGui::SetNextWindowDockID(filesDock, ImGuiCond_Once);
-			ImGui::SetNextWindowClass(&viewClass);
-			if (selectedFile->LoadedFile->FileType == LoadedFileType::Text && IsSelectedChanged()) {
-				ImGui::SetNextWindowFocus();
-			}
-			ImGui::Begin(("Text##textTab_" + buildFile->Name).c_str());
-			if (selectedFile && this->selectedFile->LoadedFile->Text == "")
-				this->selectedFile->LoadedFile->Text = string(this->selectedFile->LoadedFile->Binary, this->selectedFile->LoadedFile->BinarySize);
-			ImGui::InputTextMultiline(("##text_" + buildFile->Name).c_str(), (char*)selectedFile->LoadedFile->Text.c_str(), selectedFile->LoadedFile->Text.size(), ImVec2(-1, -1), ImGuiInputTextFlags_ReadOnly);
-			ImGui::End();
-
-			// Image file
-			ImGui::SetNextWindowDockID(filesDock, ImGuiCond_Once);
-			ImGui::SetNextWindowClass(&viewClass);
-			if (selectedFile->LoadedFile->FileType == LoadedFileType::Image && IsSelectedChanged()) {
-				ImGui::SetNextWindowFocus();
-			}
-			ImGui::Begin(("Image##image_" + buildFile->Name).c_str());
-			if (selectedFile->LoadedFile->Image == nullptr)
-				DirectX::LoadTextureFromFile(selectedFile->LoadedFile->FullPath, selectedFile->LoadedFile->Image);
-
-			if (selectedFile->LoadedFile->Image && DirectX::LoadedImages.find(selectedFile->LoadedFile->Image) != DirectX::LoadedImages.end()) {
-				DirectX::LoadedImage info = DirectX::LoadedImages[selectedFile->LoadedFile->Image]; // there always will be info about image
-				float aspect = (float)info.Width / (float)max(info.Height, 1);
-				ImGui::Image(selectedFile->LoadedFile->Image, ImVec2(ImGui::GetContentRegionAvail().x, ImGui::GetContentRegionAvail().x / aspect));
-			}
-			ImGui::End();
-
-			// Binary file
-			ImGui::SetNextWindowDockID(filesDock, ImGuiCond_Once);
-			ImGui::SetNextWindowClass(&viewClass);
-			if (selectedFile->LoadedFile->FileType == LoadedFileType::Binary && IsSelectedChanged()) {
-				ImGui::SetNextWindowFocus();
-			}
-			ImGui::Begin(("Binary##binary_" + buildFile->Name).c_str());
-			if (selectedFile && this->selectedFile->LoadedFile->BinaryHex == "")
-				this->selectedFile->LoadedFile->BinaryHex = ToHex2(this->selectedFile->LoadedFile->Binary, this->selectedFile->LoadedFile->BinarySize, true);
-			ImGui::InputTextMultiline(("##binary_" + buildFile->Name).c_str(), (char*)selectedFile->LoadedFile->BinaryHex.c_str(), selectedFile->LoadedFile->BinaryHex.size(), ImVec2(-1, ImGui::GetContentRegionAvail().y - 30), ImGuiInputTextFlags_ReadOnly);
-			if (ImGui::InputInt("Current row", &this->currentBinaryRow)) {
-				if (this->currentBinaryRow < 0)
-					this->currentBinaryRow = 0;
-
-				ImGuiContext& g = *GImGui;
-				const char* child_window_name = NULL;
-				ImFormatStringToTempBuffer(&child_window_name, NULL, "%s/%s_%08X", g.CurrentWindow->Name, ("##binary_" + buildFile->Name).c_str(), ImGui::GetID(("##binary_" + buildFile->Name).c_str()));
-				ImGuiWindow* child_window = ImGui::FindWindowByName(child_window_name);
-				ImGui::SetScrollY(child_window, this->currentBinaryRow * ImGui::CalcTextSize("a").y + 3);
-
-			}
-
-			ImGui::End();
-		}
-	}
-	ImGui::Columns(1);
-
-	//ImVec2 center = ImGui::GetMainViewport()->GetCenter();
-	//ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-	//if (ImGui::BeginPopupModal("File is missing")) {
-
-	//	ImGui::EndPopup();
-	//}
-	if (disabled || disabledStarted)
-		ImGui::EndDisabled();
 	ImGui::End();
 	return true;
 }
