@@ -597,12 +597,13 @@ bool MainWindow::Render()
 	}
 	if (disableAll)
 		ImGui::EndDisabled();
-	if (disableAll || selectedBuild == -1)
+	disabled = disableAll || selectedBuild == -1 || !UpdateManager::GetHosts()->at(selectedHost).IsAdmin;
+	if (disabled)
 		ImGui::BeginDisabled();
 	if (ImGui::Button("Add depot", ImVec2(ImGui::GetContentRegionAvail().x / 2 - style->FramePadding.x, 0))) {
 		ImGui::OpenPopup("Add Depot##depot");
 	}
-	if (disableAll || selectedBuild == -1)
+	if (disabled)
 		ImGui::EndDisabled();
 	ImGui::SameLine();
 
@@ -695,6 +696,7 @@ bool MainWindow::Render()
 		auto depots = new std::vector<UpdateManager::BuildDepot>(*UpdateManager::GetHosts()->at(selectedHost).GetApps()->at(selectedApp).GetBuilds()->at(selectedBuild).GetDepots());
 
 		processingDepots = depots;
+		processingLeft = processingDepots->size();
 
 		for (int i = 0; i < min(depots->size(), Settings::ThreadsCount); i++) {
 			threads.push_back(CreateThread(0, 0, (LPTHREAD_START_ROUTINE)processDepotsThread, 0, 0, 0));
@@ -709,6 +711,7 @@ bool MainWindow::Render()
 		ImGui::BeginDisabled();
 	if (ImGui::Button("Upload all", ImVec2(ImGui::GetContentRegionAvail().x / 2 - style->FramePadding.x, 0)))
 	{
+		CloseAllViewWindows();
 		downloadOrUpload = true;
 		auto depots = new std::vector<UpdateManager::BuildDepot>(*UpdateManager::GetHosts()->at(selectedHost).GetApps()->at(selectedApp).GetBuilds()->at(selectedBuild).GetDepots());
 
@@ -797,7 +800,7 @@ bool MainWindow::Render()
 		bool close = false;
 
 		ImGui::Text(" App Name");
-		ImGui::InputText("##appname", inputAppNameBuffer, sizeof(inputAppNameBuffer), ImGuiInputTextFlags_CharsNoBlank | ImGuiInputTextFlags_CallbackCharFilter, [](ImGuiInputTextCallbackData* data) { if (data->EventChar >= 'a' && data->EventChar <= 'z' || data->EventChar >= 'A' && data->EventChar <= 'Z' || data->EventChar >= '0' && data->EventChar <= '9') return 0; return 1; });
+		ImGui::InputText("##appname", inputAppNameBuffer, sizeof(inputAppNameBuffer), ImGuiInputTextFlags_CharsNoBlank | ImGuiInputTextFlags_CallbackCharFilter, [](ImGuiInputTextCallbackData* data) { if (data->EventChar >= 'a' && data->EventChar <= 'z' || data->EventChar >= 'A' && data->EventChar <= 'Z' || data->EventChar >= '0' && data->EventChar <= '9' || data->EventChar <= '_') return 0; return 1; });
 
 		if (UpdateManager::GetHosts()->at(selectedHost).IsAdmin) {
 			ImGui::Text("Access Group");
@@ -877,7 +880,7 @@ bool MainWindow::Render()
 		if (GetAsyncKeyState(VK_ESCAPE))
 			ImGui::CloseCurrentPopup();
 		ImGui::Text(" Are you sure you want to remove app?");
-		if (ImGui::Button("Remove", ImVec2(100, 0))) {
+		if (ImGui::Button("Remove", ImVec2(130, 0))) {
 			UpdateManager::GetHosts()->at(selectedHost).RemoveApp(UpdateManager::GetHosts()->at(selectedHost).GetApps()->at(selectedApp).Id);
 			selectedApp = -1;
 			selectedBuild = -1;
@@ -885,7 +888,7 @@ bool MainWindow::Render()
 			ImGui::CloseCurrentPopup();
 		}
 		ImGui::SameLine();
-		if (ImGui::Button("Cancel", ImVec2(100, 0))) {
+		if (ImGui::Button("Cancel", ImVec2(130, 0))) {
 			ImGui::CloseCurrentPopup();
 		}
 
