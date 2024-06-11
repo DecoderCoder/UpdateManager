@@ -1,5 +1,4 @@
 #include "UpdateManager.h"
-
 #include "Utils/httplib/httplib.h"
 
 std::map<Host*, std::future<void>> fGetAccessGroups;
@@ -199,7 +198,7 @@ UpdateManager::Host::AddAppResponse UpdateManager::Host::AddApp(string name, str
 		else
 			res = cli.Get("/pipeline/v2/update/app/add/" + name + "/" + accessGroupValue, headers);
 		reader.parse(res->body, root);
-		if (!root.isMember("status")) {
+		if (root.isMember("status")) {
 			string status = root["status"].asString();
 			if (status == "has_deleted") {
 				return Host::AddAppResponse::HasDeleted;
@@ -539,6 +538,7 @@ void UpdateManager::Build::RemoveDepot(string name, bool onServer)
 
 void UpdateManager::BuildDepot::UploadDepot()
 {
+
 	httplib::Client cli("https://" + this->Build->App->Host->Uri);
 	string auth = this->Build->App->Host->Login + ":" + this->Build->App->Host->Password;
 	httplib::Headers headers = {
@@ -553,11 +553,16 @@ void UpdateManager::BuildDepot::UploadDepot()
 	else {
 		Log("Depot " + dye::light_blue(this->Name) + " wasn't upload, error: " + dye::red(to_string(res.error())));
 	}
+
 }
 
 void UpdateManager::BuildDepot::DownloadDepot(std::function<bool(uint64_t current, uint64_t total)> callback)
 {
 	Log("Downloading file " + this->Name);
+	if (this->Url == "") {
+		this->Downloaded = true;
+		return;
+	}
 
 	httplib::Client cli("https://" + this->Build->App->Host->Uri);
 	httplib::Result res;
@@ -888,8 +893,12 @@ bool UpdateManager::BuildDepot::PackDepot()
 		loadedFiles.insert(loadedFiles.begin(), make_pair(jsonF, json.size()));
 		fileShas.insert(fileShas.begin(), headerSha);
 
+		allSize = 0;
+
 		for (int i = 0; i < loadedFiles.size(); i++) {
+			allSize += 4;
 			string encrypted = EncryptAES(string(loadedFiles[i].first, loadedFiles[i].second), this->Key.Value, GetIV(fileShas[i], this->Key.Name));
+			allSize += encrypted.size();
 			free(loadedFiles[i].first);
 			loadedFiles[i].second = encrypted.size();
 			loadedFiles[i].first = (char*)malloc(loadedFiles[i].second);
@@ -898,6 +907,7 @@ bool UpdateManager::BuildDepot::PackDepot()
 		break;
 	}
 	}
+
 
 	string jsonString = mainJson.toStyledString();
 	free(this->Depot);
@@ -925,7 +935,8 @@ bool UpdateManager::BuildDepot::PackDepot()
 		offset += sizeof(unsigned int);
 		memcpy(this->Depot + offset, loadedFiles[i].first, loadedFiles[i].second);
 		offset += loadedFiles[i].second;
-		//free(loadedFiles[i].first);
+		free(loadedFiles[i].first);
+		loadedFiles[i].first = nullptr;
 	}
 
 	WriteToFile(this->FullPath, this->Depot, this->DepotSize);
