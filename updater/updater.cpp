@@ -11,9 +11,9 @@
 using namespace std;
 namespace fs = std::filesystem;
 
-char Host[] = "https://decodercoder.xyz||||||||||||||||||";
-char AppName[] = "test_app||||||||||||||||||";
-char MainName[] = "core|||||||||||||";
+char Host[] = "decodercoder.xyz||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||";
+char AppName[] = "test_app||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||";
+char MainName[] = "core|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||";
 
 fs::path GetExecutableFolder()
 {

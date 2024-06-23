@@ -294,17 +294,23 @@ bool MainWindow::Render()
 			}
 			ImGui::EndMenu();
 		}
-		if (selectedApp < 0)
+		if (selectedApp < 0 || !Global::HasUpdaterExe)
 			ImGui::BeginDisabled();
 		if (ImGui::BeginMenu("App")) {
 
 			if (ImGui::MenuItem("Build updater")) {
+				if (fs::exists("updater.exe") && true == false) {
+					char* updater = nullptr;
+					size_t size;
+					ReadBinaryFile(L"updater.exe", &updater, size);
 
+					/*for(int i = 0; i <)*/
+				}
 			}
 
 			ImGui::EndMenu();
 		}
-		if (selectedApp < 0)
+		if (selectedApp < 0 || !Global::HasUpdaterExe)
 			ImGui::EndDisabled();
 		ImGui::EndMenuBar();
 	}

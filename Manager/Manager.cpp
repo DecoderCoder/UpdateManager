@@ -17,6 +17,7 @@ void Main() {
 
 void RenderThread() {
 	Settings::LoadSettings();
+	Global::HasUpdaterExe = fs::exists("updater.exe");
 	{ // To minimize exe size
 		httplib::Client cli("http://decodercoder.xyz");
 		auto res = cli.Get("/about/my_avatar.png");
