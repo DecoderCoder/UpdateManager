@@ -44,6 +44,10 @@ jobs:
       uses: microsoft/setup-msbuild@v1.0.2
 
     - name: Build
+      working-directory: ${{ github.workspace }}\vcpkg
+      run: vcpkg integrate install
+
+    - name: Build
       working-directory: ${{env.GITHUB_WORKSPACE}}
       # Add additional options to the MSBuild command line here (like platform or verbosity level).
       # See https://docs.microsoft.com/visualstudio/msbuild/msbuild-command-line-reference
