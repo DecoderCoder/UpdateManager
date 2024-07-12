@@ -5,6 +5,8 @@
 namespace Global {
 	inline bool HasUpdaterExe = false;
 
+	inline bool serverAvailable = false;
+
 	inline std::pair<unsigned char*, size_t> myAvatar;
 	inline std::pair<unsigned char*, size_t> ddma;
 	inline std::pair<unsigned char*, size_t> fontRegular;
