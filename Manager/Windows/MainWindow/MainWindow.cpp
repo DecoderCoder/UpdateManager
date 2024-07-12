@@ -275,6 +275,8 @@ bool MainWindow::Render()
 			//if (ImGui::MenuItem("Change theme")) {
 			//	Settings::darkMode = !Settings::darkMode;
 			//}
+			if (!Global::serverAvailable)
+				ImGui::BeginDisabled();
 			if (ImGui::MenuItem("About")) {
 				AboutWindow* aboutWindow = nullptr;
 				for (Window*& obj : DirectX::Windows) {
@@ -292,6 +294,8 @@ bool MainWindow::Render()
 					aboutWindow->Show();
 				}
 			}
+			if (!Global::serverAvailable)
+				ImGui::EndDisabled();
 			ImGui::EndMenu();
 		}
 		if (selectedApp < 0 || !Global::HasUpdaterExe)
