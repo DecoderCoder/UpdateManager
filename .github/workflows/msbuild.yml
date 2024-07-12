@@ -31,24 +31,22 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: vcpkg build
-      uses: johnwason/vcpkg-action@v6
-      id: vcpkg
-      with:
-        pkgs: openssl-windows
-        triplet: x64-windows
-        token: ${{ github.token }}
-        github-binarycache: true
+#    - name: vcpkg build
+#      uses: johnwason/vcpkg-action@v6
+#      id: vcpkg
+#      with:
+#        pkgs: openssl-windows
+#        triplet: x64-windows
+#        token: ${{ github.token }}
+#        github-binarycache: true
 
     - name: Add MSBuild to PATH
       uses: microsoft/setup-msbuild@v1.0.2
 
-    - name: Vcpkg integration
-      working-directory: ${{ github.workspace }}\vcpkg
-      run: vcpkg integrate install
+#    - name: Vcpkg integration
+#      working-directory: ${{ github.workspace }}\vcpkg
+#      run: vcpkg integrate install
 
     - name: Build
       working-directory: ${{env.GITHUB_WORKSPACE}}
-      # Add additional options to the MSBuild command line here (like platform or verbosity level).
-      # See https://docs.microsoft.com/visualstudio/msbuild/msbuild-command-line-reference
       run: msbuild /m /p:Configuration=${{env.BUILD_CONFIGURATION}} ${{env.SOLUTION_FILE_PATH}} /property:Platform=x64
