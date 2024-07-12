@@ -31,12 +31,14 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - uses: lukka/get-cmake@latest
-    - name: Run vcpkg
-      uses: lukka/run-vcpkg@v11
+    - name: vcpkg build
+      uses: johnwason/vcpkg-action@v6
+      id: vcpkg
       with:
-        runVcpkgInstall: true
-        vcpkgJsonGlob: '**\vcpkg.json'
+        pkgs: openssl-windows
+        triplet: x64-window
+        token: ${{ github.token }}
+        github-binarycache: true
 
     - name: Add MSBuild to PATH
       uses: microsoft/setup-msbuild@v1.0.2
