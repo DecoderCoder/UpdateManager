@@ -31,7 +31,7 @@ jobs:
     steps:
     - uses: lukka/get-cmake@latest
     - name: Setup anew (or from cache) vcpkg (and does not build any package)
-      uses: lukka/run-vcpkg # Always specify the specific _version_ of the
+      uses: lukka/run-vcpkg@latest # Always specify the specific _version_ of the
       with:
         runVcpkgInstall: true
         vcpkgJsonGlob: '**/vcpkg/vcpkg.json'
