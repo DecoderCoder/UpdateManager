@@ -34,7 +34,7 @@ jobs:
       uses: lukka/run-vcpkg@v11 # Always specify the specific _version_ of the
       with:
         runVcpkgInstall: true
-        vcpkgJsonGlob: 'vcpkg.json'
+        vcpkgJsonGlob: '**vcpkg.json'
       
     - uses: actions/checkout@v4
 
