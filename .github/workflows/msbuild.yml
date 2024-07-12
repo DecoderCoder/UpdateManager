@@ -36,7 +36,7 @@ jobs:
       id: vcpkg
       with:
         pkgs: openssl-windows
-        triplet: x64-window
+        triplet: x64-windows
         token: ${{ github.token }}
         github-binarycache: true
 
