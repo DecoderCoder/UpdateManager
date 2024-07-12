@@ -48,8 +48,8 @@
     <LibraryPath>$(ProjectDir)/DirectX/lib/x64;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <IncludePath>$(ProjectDir)/DirectX/ImGui;$(IncludePath)</IncludePath>
-    <LibraryPath>$(ProjectDir)/DirectX/lib/x64;$(LibraryPath)</LibraryPath>
+    <IncludePath>$(ProjectDir)/OpenSSL/include;$(ProjectDir)/DirectX/ImGui;$(IncludePath)</IncludePath>
+    <LibraryPath>$(ProjectDir)/OpenSSL/lib;$(ProjectDir)/DirectX/lib/x64;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
