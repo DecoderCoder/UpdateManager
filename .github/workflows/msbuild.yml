@@ -13,6 +13,7 @@ on:
 
 env:
   # Path to the solution file relative to the root of the project.
+  VCPKG_DEFAULT_TRIPLET: x64-window
   SOLUTION_FILE_PATH: .
 
   # Configuration type to build.
@@ -28,14 +29,17 @@ jobs:
     runs-on: windows-latest
 
     steps:
+    - uses: lukka/get-cmake@latest
+    - name: Setup anew (or from cache) vcpkg (and does not build any package)
+      uses: lukka/run-vcpkg@v11 # Always specify the specific _version_ of the
+      with:
+        runVcpkgInstall: true
+        vcpkgJsonGlob: '**/vcpkg.json'
+      
     - uses: actions/checkout@v4
 
     - name: Add MSBuild to PATH
       uses: microsoft/setup-msbuild@v1.0.2
-
-    - name: Restore NuGet packages
-      working-directory: ${{env.GITHUB_WORKSPACE}}
-      run: nuget restore ${{env.SOLUTION_FILE_PATH}}
 
     - name: Build
       working-directory: ${{env.GITHUB_WORKSPACE}}
