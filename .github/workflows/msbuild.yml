@@ -13,7 +13,6 @@ on:
 
 env:
   # Path to the solution file relative to the root of the project.
-  VCPKG_DEFAULT_TRIPLET: x64-window
   SOLUTION_FILE_PATH: .
 
   # Configuration type to build.

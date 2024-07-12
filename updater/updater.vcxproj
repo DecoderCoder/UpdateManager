@@ -145,6 +145,10 @@ copy "$(SolutionDir)vcpkg\installed\x64-windows\bin\libssl-3-x64.dll" "$(TargetD
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalDependencies>libcrypto.lib;libssl.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
+    <PostBuildEvent>
+      <Command>copy "$(SolutionDir)vcpkg\installed\x64-windows\bin\libcrypto-3-x64.dll" "$(TargetDir)"
+copy "$(SolutionDir)vcpkg\installed\x64-windows\bin\libssl-3-x64.dll" "$(TargetDir)"</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="jsoncpp\jsoncpp.cpp" />
