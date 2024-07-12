@@ -1,7 +1,0 @@
-{
-  "name": "UpdateManager",
-  "version-string": "0.9",
-  "dependencies": [
-    "openssl-windows:x64-window"
-  ]
-}
