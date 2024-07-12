@@ -37,6 +37,7 @@ jobs:
       uses: lukka/run-vcpkg@v11
       with:
         runVcpkgInstall: true
+        vcpkgDirectory: '/vcpkg/'
         vcpkgJsonGlob: '**/vcpkg/vcpkg.json'
 
     - name: Add MSBuild to PATH
