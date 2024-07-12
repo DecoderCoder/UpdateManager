@@ -29,13 +29,15 @@ jobs:
     runs-on: windows-latest
 
     steps:
-    - uses: lukka/get-cmake@latest
-    
-    - name: Setup anew (or from cache) vcpkg (and does not build any package)
-      uses: lukka/run-vcpkg@v11 # Always specify the specific _version_ of the
-      
-      
     - uses: actions/checkout@v4
+
+    - uses: lukka/get-cmake@latest
+
+    - name: Run vcpkg
+      uses: lukka/run-vcpkg@v4
+      with:
+        runVcpkgInstall: true
+        vcpkgJsonGlob: '**/vcpkg/vcpkg.json'
 
     - name: Add MSBuild to PATH
       uses: microsoft/setup-msbuild@v1.0.2
