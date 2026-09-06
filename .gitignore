@@ -398,9 +398,5 @@ FodyWeavers.xsd
 *.sln.iml
 imgui.ini
 
-# Track the top-level release payload separately from Visual Studio build output.
-!/release/
-!/release/update/
-!/release/update/**
-!/release/update2/
-!/release/update2/**
+# Downloaded update payloads stay local; do not store them in Git or Git LFS.
+/release/

@@ -1,5 +1,2 @@
 # Auto detect text files and perform LF normalization
 * text=auto
-
-/release/update/** filter=lfs diff=lfs merge=lfs -text
-/release/update2/** filter=lfs diff=lfs merge=lfs -text
