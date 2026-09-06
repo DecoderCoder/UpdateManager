@@ -106,7 +106,7 @@ int main(int argc, char* argv[])
 		}
 
 	httplib::Client cli(host);
-	auto res = cli.Get("/pipeline/v2/update/" + appName + "/win/public/details.json");
+	auto res = cli.Get("/pipeline/v2/update/" + appName + "/win/canary/details.json");
 	auto details = GetJSONFromString(res->body).value();
 
 	std::vector<std::pair<std::string, std::string>> keys;

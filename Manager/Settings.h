@@ -1,6 +1,8 @@
 #pragma once
+#include <string>
 
 namespace Settings {
+	inline std::string OS = "win";
 	inline bool LowRAM = false;
 	inline bool DarkMode = true;
 	inline int ThreadsCount = 1;

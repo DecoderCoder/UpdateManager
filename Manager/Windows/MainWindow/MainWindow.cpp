@@ -90,6 +90,25 @@ void processDepotsThread() {
 	}
 }
 
+void processUnpackDepotsThread() {
+	while (processingDepots && processingDepots->size() > 0) {
+		BuildDepot depot;
+
+		obj.lock();
+		if (processingDepots->size() == 0)
+		{
+			obj.unlock();
+			break;
+		}
+		depot = processingDepots->at(0);
+		processingDepots->erase(processingDepots->begin());
+		obj.unlock();
+		if (depot.Downloaded)
+			depot.UnpackDepot();
+		processingLeft--;
+	}
+}
+
 string GetAppsText() {
 	if (selectedHost != -1 && UpdateManager::GetHosts()->at(selectedHost).WaitingGetApps) {
 		if (GetTickCount() > appsDots.second) { // appsLastDot
@@ -157,8 +176,11 @@ void OpenSelected() {
 					ViewWindow* window = new ViewWindow(openingBuild);
 					window->SetDock(dockId);
 				}
-				UnpackingProgresses.erase(UnpackingProgresses.find(openingBuild));
-				openingBuilds.erase(std::find(openingBuilds.begin(), openingBuilds.end(), openingBuild));
+				if (UnpackingProgresses.find(openingBuild) != UnpackingProgresses.end())
+					UnpackingProgresses.erase(UnpackingProgresses.find(openingBuild));
+				//	if (openingBuilds.find(openingBuild) != openingBuilds.end()
+				if (std::find(openingBuilds.begin(), openingBuilds.end(), openingBuild) != openingBuilds.end())
+					openingBuilds.erase(std::find(openingBuilds.begin(), openingBuilds.end(), openingBuild));
 
 				return 0;
 
@@ -169,6 +191,8 @@ void OpenSelected() {
 			}, NULL, NULL, NULL);
 	}
 }
+
+char branchText[MAX_PATH];
 
 bool MainWindow::Render()
 {
@@ -251,6 +275,16 @@ bool MainWindow::Render()
 				ImGui::BeginDisabled();
 			if (ImGui::MenuItem("Settings")) {
 				openSettings = true;
+			}
+			if (ImGui::MenuItem("Unpack custom depot")) {
+				//////////////////////////
+
+				OPENFILENAMEA a;
+				if (GetOpenFileNameA(&a)) {
+					DepotFile d();
+				}
+
+				//////////////////////////
 			}
 			if (processingLeft)
 				ImGui::EndDisabled();
@@ -366,7 +400,7 @@ bool MainWindow::Render()
 		if (selectedHost > -1) {
 			auto apps = UpdateManager::GetHosts()->at(selectedHost).GetApps();
 			for (int i = 0; i < apps->size(); i++) {
-				if (ImGui::Selectable(apps->at(i).Id.c_str(), i == selectedApp)) {
+				if (ImGui::Selectable((apps->at(i).Id + " [" + apps->at(i).OS + "] [" + apps->at(i).Branch + "]").c_str(), i == selectedApp)) {
 					selectedApp = i;
 					selectedBuild = -1;
 					selectedDepots.clear();
@@ -412,9 +446,8 @@ bool MainWindow::Render()
 			auto builds = UpdateManager::GetHosts()->at(selectedHost).GetApps()->at(selectedApp).GetBuilds();
 			for (int i = 0; i < builds->size(); i++) {
 				UpdateManager::Build* build = &builds->at(i);
-				if (!build->LastBuild)
-					if (!build->App->Host->IsAdmin && !build->HasDetails())
-						ImGui::BeginDisabled();
+				if (!build->HasDetails())
+					ImGui::BeginDisabled();
 				if (ImGui::Selectable(build->Id.c_str(), i == selectedBuild)) {
 					if (selectedBuild != i) {
 						CloseAllViewWindows();
@@ -429,7 +462,7 @@ bool MainWindow::Render()
 					ImGui::PushStyleColor(ImGuiCol_TextDisabled, ImVec4(0.18f, 0.8f, 0.443f, 1));
 				}
 				else
-					if (build->App->Host->IsAdmin)
+					if (build->HasDetails())
 						statusText = "Available";
 					else
 						statusText = "Not available";
@@ -437,9 +470,8 @@ bool MainWindow::Render()
 				ImGui::TextDisabled(statusText);
 				if (build->LastBuild)
 					ImGui::PopStyleColor();
-				if (!build->LastBuild)
-					if (!build->App->Host->IsAdmin && !build->HasDetails())
-						ImGui::EndDisabled();
+				if (!build->HasDetails())
+					ImGui::EndDisabled();
 			}
 		}
 		ImGui::EndListBox();
@@ -492,19 +524,19 @@ bool MainWindow::Render()
 						continue;
 				}
 
-				if (!build->App->Host->IsAdmin && !build->LastBuild && !depot->Downloaded) {
+				if (!depot->Downloaded && !build->HasDetails()) {
 					ImGui::BeginDisabled();
 				}
 
 				if (ImGui::Selectable(depot->Name.c_str(), std::find(selectedDepots.begin(), selectedDepots.end(), i) != selectedDepots.end()))
 				{
-					//if (GetAsyncKeyState(VK_CONTROL)) { // remove it 
-					//	if (std::find(selectedDepots.begin(), selectedDepots.end(), i) != selectedDepots.end())
-					//		selectedDepots.erase(std::find(selectedDepots.begin(), selectedDepots.end(), i));
-					//	else
-					//		selectedDepots.push_back(i);
-					//}
-					//else 
+					if (GetAsyncKeyState(VK_CONTROL)) { // remove it 
+						if (std::find(selectedDepots.begin(), selectedDepots.end(), i) != selectedDepots.end())
+							selectedDepots.erase(std::find(selectedDepots.begin(), selectedDepots.end(), i));
+						else
+							selectedDepots.push_back(i);
+					}
+					else
 					{
 						selectedDepots.clear();
 						selectedDepots.push_back(i);
@@ -512,7 +544,7 @@ bool MainWindow::Render()
 				}
 
 				const char* text;
-				if (!build->App->Host->IsAdmin && !build->LastBuild && !depot->Downloaded) {
+				if (!depot->Downloaded && !build->HasDetails()) {
 					text = "Not available";
 				}
 				else {
@@ -597,7 +629,7 @@ bool MainWindow::Render()
 					}
 				}
 
-				if (!build->App->Host->IsAdmin && !build->LastBuild && !depot->Downloaded) {
+				if (!depot->Downloaded && !build->HasDetails()) {
 					ImGui::EndDisabled();
 				}
 			}
@@ -712,6 +744,18 @@ bool MainWindow::Render()
 			threads.push_back(CreateThread(0, 0, (LPTHREAD_START_ROUTINE)processDepotsThread, 0, 0, 0));
 		}
 	}
+	ImGui::SameLine();
+	if (ImGui::Button("Unpack all", ImVec2(ImGui::GetContentRegionAvail().x / 2 - style->FramePadding.x, 0))) {
+		downloadOrUpload = false;
+		auto depots = new std::vector<UpdateManager::BuildDepot>(*UpdateManager::GetHosts()->at(selectedHost).GetApps()->at(selectedApp).GetBuilds()->at(selectedBuild).GetDepots());
+
+		processingDepots = depots;
+		processingLeft = processingDepots->size();
+
+		for (int i = 0; i < min(depots->size(), Settings::ThreadsCount); i++) {
+			threads.push_back(CreateThread(0, 0, (LPTHREAD_START_ROUTINE)processUnpackDepotsThread, 0, 0, 0));
+		}
+	}
 
 	if (disableAll || selectedBuild == -1)
 		ImGui::EndDisabled();
@@ -719,7 +763,7 @@ bool MainWindow::Render()
 	disabled = selectedBuild == -1 || !UpdateManager::GetHosts()->at(selectedHost).IsAdmin;
 	if (disableAll || disabled)
 		ImGui::BeginDisabled();
-	if (ImGui::Button("Upload all", ImVec2(ImGui::GetContentRegionAvail().x / 2 - style->FramePadding.x, 0)))
+	/*if (ImGui::Button("Upload all", ImVec2(ImGui::GetContentRegionAvail().x / 2 - style->FramePadding.x, 0)))
 	{
 		CloseAllViewWindows();
 		downloadOrUpload = true;
@@ -730,7 +774,7 @@ bool MainWindow::Render()
 		for (int i = 0; i < min(depots->size(), Settings::ThreadsCount); i++) {
 			threads.push_back(CreateThread(0, 0, (LPTHREAD_START_ROUTINE)processDepotsThread, 0, 0, 0));
 		}
-	}
+	}*/
 	if (disableAll || disabled)
 		ImGui::EndDisabled();
 	ImGui::SameLine();
@@ -953,12 +997,14 @@ bool MainWindow::Render()
 			}
 			ImGui::Text(" Stage");
 			ImGui::SetNextItemWidth(-1);
+			ImGui::InputText("Branch", branchText, sizeof(branchText));
 			if (ImGui::BeginCombo("##stage", "Public")) { // public | canary | staging (encrypted)
-				ImGui::Selectable("Public", true);
-				ImGui::BeginDisabled();
-				ImGui::Selectable("Canary", false);
-				ImGui::Selectable("Staging", false);
-				ImGui::EndDisabled();
+				if (ImGui::Selectable("public", true))
+					strcpy(branchText, "public");
+				if (ImGui::Selectable("canary", true))
+					strcpy(branchText, "canary");
+				if (ImGui::Selectable("staging", true))
+					strcpy(branchText, "staging");
 				ImGui::EndCombo();
 			}
 			ImGui::EndChild();

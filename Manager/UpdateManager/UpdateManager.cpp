@@ -289,9 +289,22 @@ vector<App>* UpdateManager::Host::GetApps(bool enforce)
 					{
 						if (!fs::is_directory(obj))
 							continue;
+
+						auto fileName = obj.filename().string();
+						string os = "", branch = "";
+						if (fileName.find("_") != string::npos) {
+							branch = fileName.substr(fileName.find("_") + 1);
+							os = branch.substr(0, branch.find("_"));
+							branch = branch.substr(branch.find("_") + 1);
+							fileName = fileName.substr(0, fileName.find("_"));
+
+						}
+
 						App newVersion;
-						newVersion.Id = obj.filename().string();
+						newVersion.Id = fileName;
 						newVersion.Host = this;
+						newVersion.OS = os == "" ? "win" : os;
+						newVersion.Branch = branch == "" ? "public" : branch;
 						newVersion.OnServer = std::find(onServer.begin(), onServer.end(), newVersion.Id) != onServer.end();
 						ret.push_back(newVersion);
 					}
@@ -314,9 +327,9 @@ KeyManager::Key UpdateManager::Host::GetKey(string name)
 	return KeyManager::Key();
 }
 
-std::optional<Json::Value> GetDetailsJSON(string host, string ver, string ghub) {
+std::optional<Json::Value> GetDetailsJSON(string host, string ver, string ghub, string OS, string branch) {
 	httplib::Client cli("https://" + host);
-	auto res = cli.Get("/pipeline/" + ver + "/update/" + ghub + "/win/public/details.json");
+	auto res = cli.Get("/pipeline/" + ver + "/update/" + ghub + "/" + OS + "/" + branch + "/details.json");
 	if (res.error() != httplib::Error::Success || res->status != 200)
 		return nullopt;
 	Json::Value root;
@@ -363,19 +376,25 @@ void UpdateManager::App::AddBuild(string buildName)
 
 vector<Build>* UpdateManager::App::GetBuilds(bool enforce)
 {
+	return this->GetBuilds(this->OS, enforce);
+}
+
+vector<Build>* UpdateManager::App::GetBuilds(string os, bool enforce)
+{
 	if (!enforce && this->Builds.size()) {
 		return &this->Builds;
 	}
 	if (!this->WaitingGetBuilds || enforce) {
 		this->WaitingGetBuilds = true;
+		this->OS = os;
 		fGetBuilds[this] = std::async([&]() {
-			const auto buildFolder = GetExecutableFolder().wstring() + L"\\updates\\" + to_wstring(this->Host->Uri) + L"\\" + to_wstring(this->Id) + L"\\";
+			const auto buildFolder = GetExecutableFolder().wstring() + L"\\updates\\" + to_wstring(this->Host->Uri) + L"\\" + to_wstring(this->Id) + L"_" + to_wstring(this->OS) + L"_" + to_wstring(this->Branch) + L"\\";
 
 			Log("Getting builds");
 
 			string lastBuildId = "";
 			std::vector<Build> ret = std::vector<Build>();
-			auto lastBuild = GetDetailsJSON(this->Host->Uri, "v2", this->Id);
+			auto lastBuild = GetDetailsJSON(this->Host->Uri, "v1", this->Id, this->OS, this->Branch);
 			if (lastBuild.has_value()) {
 				lastBuildId = lastBuild.value()["buildId"].asString();
 				if (lastBuildId == "0") {
@@ -470,10 +489,10 @@ vector<Build>* UpdateManager::App::GetBuilds(bool enforce)
 
 					ret.push_back(*newBuild);
 				}
-				if (!hasBuilds && !this->Host->IsAdmin) {
-					fs::remove_all(buildFolder);
-					this->Host->RemoveApp(this->Id);
-				}
+				//if (!hasBuilds && !this->Host->IsAdmin) {
+				//	fs::remove_all(buildFolder);
+				//	this->Host->RemoveApp(this->Id);
+				//}
 				this->Builds = ret;
 			}
 			this->WaitingGetBuilds = false;
@@ -495,7 +514,7 @@ bool UpdateManager::Build::IsValid()
 bool UpdateManager::Build::HasDetails()
 {
 	if (!this->hasDetailsChecked) {
-		this->hasDetails = fs::exists(GetExecutableFolder().wstring() + L"\\updates\\" + to_wstring(this->App->Host->Uri) + L"\\" + to_wstring(this->App->Id) + L"\\" + to_wstring(this->Id) + L"\\details.json");
+		this->hasDetails = fs::exists(GetExecutableFolder().wstring() + L"\\updates\\" + to_wstring(this->App->Host->Uri) + L"\\" + to_wstring(this->App->Id) + L"_" + to_wstring(this->App->OS) + L"_" + to_wstring(this->App->Branch) + L"\\" + to_wstring(this->Id) + L"\\details.json");
 		this->hasDetailsChecked = true;
 	}
 	return this->hasDetails;
@@ -562,6 +581,9 @@ void UpdateManager::BuildDepot::DownloadDepot(std::function<bool(uint64_t curren
 	if (this->Url == "") {
 		this->Downloaded = true;
 		return;
+	}
+	if (this->Url.find("http") != std::string::npos) {
+		this->Url = this->Url.substr(this->Url.find("/depots"));
 	}
 
 	httplib::Client cli("https://" + this->Build->App->Host->Uri);
@@ -781,6 +803,10 @@ BuildDepot::UnpackResult UpdateManager::BuildDepot::UnpackDepot(int* progress, i
 			}
 
 			string fileName = JSONData["files"][(this->FileType == DFileType::Encrypted ? i - 1 : i)]["name"].asString();
+			char* f = fileName.data();
+			for (int i = 0; i < fileName.size(); i++)
+				if (f[i] == '/')
+					f[i] = '\\';
 			wstring filePathStr = this->UnpackedDir + L"\\" + to_wstring(fileName);
 			fs::path filePath = fs::path(filePathStr).parent_path();
 			fs::create_directories(filePath);
@@ -805,6 +831,84 @@ BuildDepot::UnpackResult UpdateManager::BuildDepot::UnpackDepot(int* progress, i
 		*progress = 0;
 	if (progressMax != nullptr)
 		*progressMax = 0;
+	return UnpackResult::Success;
+}
+
+// remove or rewrite this method later
+BuildDepot::UnpackResult UpdateManager::BuildDepot::UnpackDepot(string fileName, string outDir)
+{
+	char* file;
+	size_t fileSize;
+	ReadBinaryFile(wstring(fileName.begin(), fileName.end()), &file, fileSize);
+
+
+	//Json::Value JSONData;
+	//unsigned int JSONLength = *(unsigned int*)(file + sizeof(BuildDepot::DFileType));
+	//{
+	//	Json::Reader reader;
+
+	//	string json = string(file + sizeof(BuildDepot::DFileType) + sizeof(unsigned int), file + sizeof(BuildDepot::DFileType) + sizeof(unsigned int) + JSONLength);
+	//	reader.parse(json, JSONData);
+	//}
+
+	//// Reading files
+	//int offset = sizeof(BuildDepot::DFileType) + sizeof(unsigned int) + JSONLength;
+
+	//if (this->FileType == DFileType::EncryptedFile) {
+	//	KeyManager::Key key = this->Build->App->Host->GetKey(JSONData["key-id"].asString());
+	//	if (!key.IsValid())
+	//	{
+	//		this->lastUnpackResult == UnpackResult::KeyNotFound;
+	//		this->SetLock(false);
+	//		return this->lastUnpackResult;
+	//	}
+	//	unsigned int fileSize = *(unsigned int*)(file + offset);
+	//	offset += sizeof(unsigned int);
+	//	string decryptedData = DecryptAES(string(file + offset, fileSize), key.Value, GetIV(JSONData["file-sha"].asString(), key.Name));
+	//	fs::create_directories(this->UnpackedDir);
+	//	WriteToFile(this->UnpackedDir + L"\\" + fs::path(this->Name).filename().wstring(), decryptedData.data(), decryptedData.size());
+	//}
+	//else
+	//{
+	//	if (progress != nullptr)
+	//		*progress = 0;
+	//	if (progressMax)
+	//		*progressMax = JSONData["files"].size();
+	//	for (unsigned int i = 0; i < JSONData["files"].size() || offset < fileSize; i++) {
+	//		unsigned int fileSize = *(unsigned int*)(file + offset);
+	//		offset += sizeof(unsigned int);
+	//		if (this->FileType == DFileType::Encrypted && i == 0) {
+	//			auto jsondata = DecryptAES(string(file + offset, fileSize), this->Key.Value, GetIV(this->sha, this->Key.Name));
+	//			JSONData = GetJSONFromString(jsondata).value();
+	//			offset += fileSize;
+	//			continue;
+	//		}
+
+	//		string fileName = JSONData["files"][(this->FileType == DFileType::Encrypted ? i - 1 : i)]["name"].asString();
+	//		wstring filePathStr = this->UnpackedDir + L"\\" + to_wstring(fileName);
+	//		fs::path filePath = fs::path(filePathStr).parent_path();
+	//		fs::create_directories(filePath);
+	//		if (this->FileType == DFileType::Default)
+	//			WriteToFile(this->UnpackedDir + L"\\" + to_wstring(fileName), file + offset, fileSize);
+	//		else
+	//		{
+	//			string decryptedData = DecryptAES(string(file + offset, fileSize), this->Key.Value, GetIV(JSONData["files"][(this->FileType == DFileType::Encrypted ? i - 1 : i)]["sha"].asString(), this->Key.Name));
+	//			WriteToFile(this->UnpackedDir + L"\\" + to_wstring(fileName), decryptedData.data(), decryptedData.size());
+	//		}
+
+	//		offset += fileSize;
+	//		Log("Unpacked file " + fileName + ", Size: " + to_string(fileSize));
+	//		if (progress != nullptr)
+	//			(*progress)++;
+	//	}
+	//}
+
+	//this->lastUnpackResult = UnpackResult::Success;
+	//this->CheckDepot();
+	//if (progress != nullptr)
+	//	*progress = 0;
+	//if (progressMax != nullptr)
+	//	*progressMax = 0;
 	return UnpackResult::Success;
 }
 

@@ -124,6 +124,7 @@ namespace UpdateManager {
 		UnpackResult GetFileType();
 		UnpackResult CheckDepot(bool force = true);
 		UnpackResult UnpackDepot(int* file, int* fileCount, bool force = true);
+		static UnpackResult UnpackDepot(string fileName, string outDir);
 		UnpackResult UnpackDepot(bool force = true);
 		bool PackDepot();
 
@@ -174,10 +175,13 @@ namespace UpdateManager {
 		bool WaitingGetBuilds = false;
 		bool OnServer = false;
 		string Id;
+		string OS;
+		string Branch;
 		Host* Host;
 		vector<Build> Builds;
 		void AddBuild(string buildName);
 		vector<Build>* GetBuilds(bool enforce = false);
+		vector<Build>* GetBuilds(string os, bool enforce = false);
 	};
 
 	class Host {
