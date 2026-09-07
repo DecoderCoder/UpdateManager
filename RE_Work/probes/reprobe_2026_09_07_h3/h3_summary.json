@@ -1,0 +1,18 @@
+﻿[
+    {
+        "host":  "http://2pipeline.s3.amazonaws.com",
+        "status":  200,
+        "bytes":  632,
+        "mac":  "9d9adf8369ee843e9f9d58bcba35e4ce6c6efff1cd490290a431b774c39b8487",
+        "match":  true,
+        "error":  ""
+    },
+    {
+        "host":  "http://updates.ghub.logitechg.com",
+        "status":  403,
+        "bytes":  0,
+        "mac":  "",
+        "match":  "",
+        "error":  "text/html"
+    }
+]

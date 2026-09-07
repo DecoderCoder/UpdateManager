@@ -101,10 +101,17 @@ coincidence of the one-day field difference. Same buildId/version for both
 | v1: `https://2pipeline.s3.amazonaws.com/depots/{dirUuid}/{name}.depot` (absolute, in manifest) | S3 | [LIVE] v1 manifest |
 | v2: `/depots/{dirUuid}/{name}.depot` (relative, in manifest) | `updates.ghub.logitechg.com` — **empirically confirmed by fetching 6 depots from this host** | [LIVE] `RE_Work/probes/fetch_depot.mjs` (UA header), saved `depot_*.bin` |
 
-**[HYPOTHESIS]** v2 relative URLs are also readable on the S3 origin
-(`2pipeline.s3.amazonaws.com/depots/...`); not tested.
-**[UNRESOLVED]** whether `/depots/...` is a CloudFront redirect to S3 or
-served directly.
+**[CONFIRMED 2026-09-07, H3]** v2 relative URLs are also readable on the S3
+origin: `http://2pipeline.s3.amazonaws.com/depots/780f7572-…/g560_dfu.depot`
+→ 200, 632 B, SHA-256 = manifest `mac`
+(`RE_Work/probes/reprobe_2026_09_07_h3/h3_s3_origin.depot`).
+**[CONFIRMED 2026-09-07]** `/depots/...` is **served directly by S3** — the
+`server: AmazonS3` response header on
+`https://updates.ghub.logitechg.com/depots/…` (200, 632 B, byte-identical to
+the S3-origin copy) shows the logitechg.com host is an S3 alias of the
+`2pipeline` bucket, not a CloudFront distribution. Note: the **HTTP**
+listener of `updates.ghub.logitechg.com` answers the same depot path with
+403 (protocol-level block; HTTPS works) — always use HTTPS for that host.
 
 ### 2.3 Keymaster / access endpoints
 
@@ -468,6 +475,139 @@ the signature is ultimately anchored to (§6.1).
 
 ---
 
+### 5.8 CapsuleMetadata — random-access resource reads ("resource_access") [BINARY, 2026-09-07]
+
+The updater does not only extract depots. `lghub_updater.exe` also indexes a
+depot in memory and reads individual files out of it by name, decrypting and
+decompressing **in place, per read** — no extraction to disk. Both modes exist
+and are selected per build; the random-access mode falls back to full
+extraction on any failure.
+
+**CapsuleMetadata (`logi::pipeline::CapsuleMetadata`, 96 B)** — built by
+`capsule_metadata_create` (0x14023D680) from an open depot stream
+(ifstream mode 33):
+- `+0`  shared_ptr key context (Key from the keymaster; see §5.6)
+- `+16` transformation chain (decrypt/decompress stream factory)
+- `+32` `vector<104 B FileRecord {name@0, mode@32, link@40, sha@72}>`
+- `+56` offset tree root A, `+64` flag/ptr, `+72` size tree root B
+- `+88` u32 magic gate: accepts `0x20170110` and `0x20210506` only
+  (the `0x20210521` single-file format has **no** random-access index).
+Construction steps: `capsule_metadata_parse_header` (0x14023E920) →
+`capsule_metadata_parse_files` (0x14023DB30, names/modes/links/shas from the
+header JSON) → `capsule_metadata_scan_chunks` (0x14023D210, physical walk of
+the `[u32 len][data]` chunks filling the offset/size trees; the i-th chunk
+pairs with the i-th regular `files[]` entry).
+
+**Three public entry points** (each opens the depot path, runs a worker, and
+returns a 41-B result struct `{message@0, code@32, status@40}` with
+status `0`=ok, `1`=fail, `-1`=unknown):
+- `capsule_open_file` (0x140200EF0) → worker
+  `capsule_open_resource_worker` (0x14023F5C0)
+- `capsule_verify_file` (0x140201890) → `capsule_verify_file_worker`
+  (0x14023FED0)
+- `capsule_list_resources` (0x1402015F0)
+
+**Worker flow (0x14023F5C0):** key-ctx null ⇒ `"Capsule metadata is null"`;
+record lookup by (normalized) name miss ⇒ `"Resource '%s' not found in
+capsule"` (followed by the full name listing); symlink target missing ⇒
+`"Broken symlink in depot: '%s' -> '%s' (target not found)"`; missing
+offset/size ⇒ `"Missing offset or size for resource '%s' in capsule
+metadata"`. The record's fields are copied into the stream factories:
+`mode` (u32), `link` string, and the **`sha` string**.
+
+**Two stream factories** (per resource):
+- plain depots → `capsule_make_buffered_resource_stream` (0x14023F180,
+  `CapsuleResourceBufferedStream`)
+- capsule depots → `capsule_make_protected_resource_stream`
+  (0x14023F220), signature (verified by register trace of the call at
+  0x14023FC62 + factory disasm):
+  `(out_sp, &transform_sp, &stream_sp, &offset_u64, sha_string, &size_u64)`.
+  It allocates a `_Ref_count_obj2` (16-B control block; the object is
+  ctrl+0x10, 0xE0 B) and calls the ctor (0x1402721E0).
+
+**`CapsuleResourceProtectedStream` field map** (ctor 0x1402721E0, confirmed
+by re-decompile + disasm — note: the decompiler's `(_DWORD)v10 + 16` argument
+form is misleading; the real asm passes `lea rcx,[rbx+10h]`):
+- `+0x68/0x70/0x78` buffer triple `{start, commit, capacity-end}` — a
+  **zeroed `size`-byte buffer** (`capsule_buffer_alloc` 0x140271600)
+- `+0x80` shared_ptr to the depot `istream` (shared with all resources)
+- `+0x90` **offset** u64 (start of the record's chunk *data*, i.e. after its
+  u32 length prefix)
+- `+0x98` **size** u64 (the chunk's u32 length, from the size tree)
+- `+0xA0` consumed bytes (0), `+0xA8` end = offset+size (recomputed per fill)
+- `+0xB0` shared_ptr to the 0xA0 protection context (shared from the
+  CapsuleMetadata transformation chain)
+- `+0xC0` **the record's `sha` string** (hex) — *not* the display name
+  (earlier labeling corrected). Ctor throws `capsule_exception`
+  `"Protection data is not provided."` (msg @0x140F4D680) when the
+  protection context is missing/invalid.
+
+**underflow** (0x140272920, vtable slot 6 — disassembled fully):
+1. g-region non-empty → return `*gptr` (no accounting).
+2. g-region empty: `consumed += g-region size`; if `consumed ≥ size`
+   recompute `end = offset + size`, `consumed = 0` (offset field itself is
+   never advanced).
+3. Head reset: `capsule_buffer_set_commit(buf, size)` — sets the commit
+   pointer of `{start, commit, cap}` to `start+n` (zero-extends on grow,
+   plain move on shrink; the name "reset/commit" fits both call sites).
+4. `fpos = offset + consumed`; `stream->seekg(fpos)`; `tellg` → `pos`;
+   `pos < offset` or `pos ≥ end` → `setg(NULL)` → EOF (-1).
+5. `to_read = end − pos` (the clamp against the buffer-end address is a
+   no-op in practice); `istream::read(stream, buf_start, to_read)`;
+   `gcount == 0` → EOF.
+6. Tail commit: `capsule_buffer_set_commit(buf, gcount)`.
+7. **Protection step** (if `+0xB0` set and the sha string is non-empty and
+   `ctx+0x58` is not aliased into it): `std::string::assign(ctx+0x58,
+   this->sha)` — the 0xA0 protection context's **PASSWORD slot (+0x58) is set
+   to the record's sha** — then `apply_capsule_protection_to_buffer`
+   (0x140240D40): wraps the buffer in a `SingleBufferStream` (0x1402407A0),
+   builds the standard decrypt+decompress chain (`build_capsule_stream_chain`
+   0x140240B40 — PBKDF2-HMAC-SHA512(sha, Key.name, 1000, 32 B) IV, AES-128-GCM
+   tagless, then xz) and pumps **in place**, shrinking commit to the
+   plaintext size.
+8. `end = offset + (commit − start)`; `setg(start, start, commit)` → the
+   g-region becomes the whole (transformed) buffer; return first byte.
+
+**Consequence (closes the round-2 password question):** the random-access
+path decrypts with **password = record.sha — exactly the same password the
+extract path uses** (`capsule_write_data_chunk` pwd = record.sha, §5.4). One
+shared transform primitive (0x140240D40) serves *all* read paths: extract,
+verify, header read, and random-access underflow.
+
+**Vtable** (0x140F4D608; plain variant 0x140F4D578): base streambuf stubs
+(`_Lock`/`_Unlock`/`overflow`/`pbackfail`/`showmanyc`/`uflow`/`xsgetn`/
+`xsputn` at 0x140DF8xxx/0x140DFF5xx), slot 6 = underflow, slots 10/11 = a
+class seek pair (`seek_entry` 0x140272670: mode 0 = absolute, mode 1 =
+derived from current g-region; `seek_impl` 0x1402727C0: validates the target
+against `[0, size]`, adjusts g-region/consumed, writes the 16-B fpos).
+Slots 12–14 contain a shared 3-qword tail (`0x140DFF7FC/F6/F0`) present
+identically in every streambuf vtable in the binary — never called, exact
+role unverified.
+
+**Mode selection — `build_resource_access` (0x14008E4D0):** builds an access
+object (`+40` key ctx: build-usage flag 0→usage 1, 1→usage 2, else throw
+`"Unknown build usage, this should never happen"`; `+56` base path; `+64`
+cache flag) and uses the depot at `join(join(base, "cache"), depotName)`.
+Failure logs `"Couldn't get a list of resources from capsule '%s' since it is
+not readable. Reason: %s. Depot state: %s. Falling back to depot approach."`
+and invokes the full-extract fallback `depot_extract_fallback`
+(0x14008E250 = `extract_capsule_to_dir`). Success lists names via
+`capsule_list_resources`, filters them (0x140036820), and serves each file
+through `resource_access_get_resource` (0x14008EEF0), which runs
+`capsule_open_file` + `capsule_verify_file` (per-file SHA-256 check,
+`verify_buffer_sha256` 0x14026F9C0) then streams the bytes into the target
+(`write_indiv_file_to_stream`); its errors:
+`"Resource '%s' from capsule '%s' (%s) is not readable. Reason: %s. Depot
+state: %s"` and `"Error '%s' when accessing resource '%s' from capsule '%s'
+(%s). Depot state: %s. Falling back to depot approach."` (event tag
+`"resource_access"`).
+
+Random access works because **each chunk is fully independent**: own u32
+length, own PBKDF2-derived IV, own xz stream — so any file can be read
+directly at `offset` without touching the rest of the depot.
+
+---
+
 ## 6. Signature verification
 
 ### 6.1 Depot signature scheme — EMPIRICALLY CONFIRMED [OFFLINE-PROOF]
@@ -680,6 +820,7 @@ hint at regional deployment and a lockdown mode, both **[UNRESOLVED]**.
 | 6 depot objects under `https://updates.ghub.logitechg.com/depots/…` | 200; sizes+SHA-256 match manifest (`verify-saved-sample.mjs`) |
 | 60 depot first-512 B prefixes (magic scan) | 36× `0x20170110`, 24× `0x20210506`, 0× `0x20210521` |
 | Re-probe 2026-09-07 (fixed script, same 17 paths) | Identical statuses/sizes: 8× 200 (938,799 / 197 / 992,526 / 197 / 938,799 / 197 / 224,746 / 197 B), 8× 403 S3-XML, root 403 0 B `text/html`. New data: `etag` + `Last-Modified` on every 200 (below); v1 `update.json` (ghub12) = 200; ghub12 buildId 710935 / version 2026.2.861817 |
+| H3 probe 2026-09-07 (`probe_h3_s3.ps1`, `probe_h3_cf_https.mjs`) | `http://2pipeline.s3.amazonaws.com/depots/780f7572-…/g560_dfu.depot` **200** 632 B, SHA-256 = manifest `mac`; same depot path on `updates.ghub.logitechg.com`: **403 over HTTP**, **200 over HTTPS with `server: AmazonS3`** (S3 alias, not CloudFront) |
 
 **[LIVE] Cache semantics (2026-09-07 re-probe,
 `RE_Work/probes/reprobe_2026_09_07/probe_summary.json`):** every 200 carries
@@ -788,6 +929,30 @@ evidence bodies in `RE_Work/probes/` are untouched.
 14. **Depot v1 TBS = raw 32-byte mac digest** — reproduced offline
     (`tbs_digest_test.mjs`) and matched to the binary `+104` input
     (§6.3).
+15. **Random-access depot reads ("resource_access")** — `CapsuleMetadata`
+    (96 B: key ctx, transformation chain, `vector<FileRecord>`, offset/size
+    trees, magic gate {`0x20170110`, `0x20210506`}) + entry points
+    `capsule_open_file`/`capsule_verify_file`/`capsule_list_resources` and
+    the worker/factory/ctor/underflow chain are fully mapped; per-file
+    SHA-256 verify + symlink-target validation; fallback to full extract
+    (`depot_extract_fallback`) on failure (§5.8).
+16. **Random-access decryption password = record.sha** — the protected
+    resource stream's `+0xC0` field is the record's sha string (not the
+    display name) and underflow copies it into the 0xA0 protection context's
+    password slot (`ctx+0x58`) before every in-place transform — identical to
+    the extract path. One shared transform (`apply_capsule_protection_to_buffer`
+    0x140240D40) on all read paths (§5.8).
+17. **Plain depot header JSON carries the full file list**
+    (`{"files":[{"name",…,"mode"},…]}`, no sizes) while `0x20210506` headers
+    carry only `{"header-sha","key-id"}` (file list inside encrypted chunk 0);
+    the size tree is always the physical `[u32 len]` chunk scan, size = chunk
+    u32 length (verified on all 6 local samples via `dump_depot_headers.js`)
+    (§5.8).
+18. **H3 closed:** v2 relative depot URLs are served by the S3 origin
+    (`http://2pipeline.s3.amazonaws.com/depots/…` 200 + mac-match), and
+    `updates.ghub.logitechg.com/depots/…` is the **same S3 bucket via alias**
+    (`server: AmazonS3`, HTTPS 200, byte-identical; the HTTP listener 403s
+    the depot path) (§2.2, §9).
 
 ## 12. Active hypotheses
 
@@ -795,7 +960,7 @@ evidence bodies in `RE_Work/probes/` are untouched.
 |---|---|---|
 | H1 | Depot v1 TBS is the raw 32-byte mac digest (not hex) | **CONFIRMED (2026-09-07):** offline TBS reproduction (`tbs_digest_test.mjs`) + binary `+104` input buffer (§6.3, §11.14) |
 | H2 | v2 manifest TBS is some canonicalization of `details.json` (e.g. protobuf-encoded, or a specific JSON serialization) | **Moot (2026-09-07):** the binary never verifies the top-level v2 signature — there is no client-side TBS to identify (§6.4, §11.13) |
-| H3 | v2 relative depot URLs also resolve on `2pipeline.s3.amazonaws.com` | Testable with 1–2 GETs |
+| H3 | v2 relative depot URLs also resolve on `2pipeline.s3.amazonaws.com` | **CONFIRMED (2026-09-07):** S3 origin serves `/depots/{uuid}/{name}.depot` with 200 + mac-match, and `updates.ghub.logitechg.com/depots/…` returns `server: AmazonS3` (S3 alias, not CloudFront) — §2.2, §9 |
 | H4 | GCM is used without tag authentication (tag dropped), matching the C++ reference ignoring `Final` | **CONFIRMED for capsule depots** (2026-09-07): both tag layouts fail auth, all chunks decrypt tagless — see §5.2 |
 | H5 | `0x20210521` depots appear only for newer builds | **Layout resolved in binary** (2026-09-07): `files-sha` single-file capsule, full flow in §5.3 — still no live sample captured |
 | H6 | `canary_machine_identifier` gates canary-channel delivery per machine | Look for the setter/getter in IDB |
@@ -814,6 +979,7 @@ evidence bodies in `RE_Work/probes/` are untouched.
 | "Plain depots (0x20170110) have no per-file length prefixes" | **Wrong** — every chunk in every format is `[u32 LE len][data]`; `check_plain_framing.mjs` frames all 5 plain depots exactly to EOF (19,392 / 632 / 192,267 / 97,930 / 21 B) (§5.1) |
 | "The `header-sha` literal is absent from the binary" | **Wrong** — present @0x140F46778; the field name is a runtime parameter passed to `parse_capsule_header` (xrefs 0x14020b331, 0x14023e986) (§5.2) |
 | "IV seed comes from the manifest depot entry (iv/key fields)" | **Wrong** — live v2 depot entries carry only name/size/url/mac/signatures (no iv/key/cipherSuite); the IV seed is the per-chunk expected-plaintext SHA hex string (§5.2, `check_iv_source.mjs`) |
+| "The protected resource stream's `+0xC0` field is the file's display name" | **Wrong (2026-09-07)** — `+0xC0` holds the record's **sha string**, copied underflow-time into the protection context's PBKDF2 password slot `ctx+0x58`; the display name is never used for decryption (§5.8, §11.16) |
 
 ## 14. Unresolved questions
 
@@ -827,8 +993,10 @@ b. **v2 manifest signature TBS** — **moot (2026-09-07):** the client never
 c. **`settings.settings`** — schema, auth, or dead.
 d. **verify_depot update input** — **resolved (2026-09-07):** the TBS is the raw 32-byte mac digest, reproduced offline (`tbs_digest_test.mjs`) and matched to the binary `+104` input (§6.3, §11.14).
 e. **Second `header-sha` caller `sub_14023E920`** — xref 0x14023e986 of the
-   `header-sha` literal @0x140F46778; a different capsule-open path, not yet
-   fully traced.
+   `header-sha` literal @0x140F46778 — **resolved (2026-09-07):** this is
+   `capsule_metadata_parse_header` (0x14023E920), the header-parsing step of
+   `capsule_metadata_create` on the random-access path; not a separate
+   capsule-open path (§5.8).
 f. **Compression** — **resolved (2026-09-07): xz only** (type code 2, literal `xz`), optional per depot via the header `compression` field; stream order decrypt → decompress (`build_capsule_stream_chain` 0x140240B40, `DecompressedStream_ctor` 0x140272C00) (§8).
 g. **xdelta differential depot** layout.
 h. **Depot variants** beyond the 3 magics (if any).
@@ -845,6 +1013,21 @@ o. **HTTP caching** — **resolved for 200s (2026-09-07 re-probe)**: strong
    untested.
 p. **`iat.json`** purpose.
 q. **Plaintext-depot file framing** — **resolved (2026-09-07):** one `[u32 LE len][data]` chunk per regular file, in `files[]` order, framing exactly to EOF on all 5 samples (`check_plain_framing.mjs`); sizes come from those per-chunk prefixes, not the manifest (§5.1).
+r. **streambuf vtable tail** — every streambuf vtable in the binary ends
+   (after the class seek pair, slots 10/11) with a shared 3-qword tail
+   `0x140DFF7FC/0x140DFF7F6/0x140DFF7F0` (mid-instruction addresses inside
+   `is_potentially_valid_image_base`, never called). Role unverified —
+   probably a compiler-emitted RTTI tail, not virtual functions (§5.8).
+s. **Encrypted depot whose xz plaintext is larger than its chunk** — size
+   tree stores the chunk u32 length (ciphertext length; == plaintext size
+   when plain); the resource buffer capacity is that `size`, so an expanded
+   plaintext larger than the chunk would hit `capsule_buffer_set_commit`'s
+   over-capacity path (`sub_14017FDC0`, unmapped). No such sample observed;
+   untested.
+t. **Post-factory result chain** — `sub_14023F0D0`/`sub_14023F020`
+   (post-factory check), `sub_14023ED10` (metadata query), `sub_14026F6C0`
+   (41-B result assembly) and the buffer over-capacity handler
+   `sub_14017FDC0` remain unmapped (§5.8).
 
 ## 15. Exact reproduction
 
@@ -884,6 +1067,14 @@ node RE_Work/probes/check_headersha.mjs
 node RE_Work/probes/check_iv_source.mjs
 # 12. plain-depot framing = u32 chunks, exact EOF, 5/5 depots (§5.1 / §11.10):
 node RE_Work/probes/check_plain_framing.mjs
+```
+
+Live H3 probe (2 depot GETs, one per host; new OutDir; §2.2 / §9):
+```powershell
+# 13. v2 depot on S3 origin (HTTP) + CloudFront alias (HTTPS) — proves §11.18:
+& "RE_Work\probes\probe_h3_s3.ps1" -OutDir "RE_Work\probes\reprobe_2026_09_07_h3"
+node RE_Work/probes/probe_h3_cf_https.mjs
+#    → s3_origin 200 632 B mac-match=True ; cloudfront HTTP 403 ; HTTPS 200 server: AmazonS3
 ```
 
 Live re-probe (only if needed; keep it small): see §17.
