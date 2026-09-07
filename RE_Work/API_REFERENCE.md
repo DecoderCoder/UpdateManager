@@ -66,9 +66,140 @@ against non-primary hosts (see §17, politeness).
 
 ## 2. Endpoints
 
-All live probes were `GET`, unauthenticated, no special headers (bun/fetch
-defaults), 2026-09-06. Depot object URLs were fetched with
+All live probes were `GET`, unauthenticated (bun/fetch defaults), 2026-09-06.
+Depot object URLs were fetched with
 `User-Agent: LGHUB/2026.6.957899 (Windows NT 10.0; x64)`.
+**[CORRECTED 2026-09-07]** the real client sends two identity headers on every
+pipeline JSON request (see §2.0.2) — the earlier "no special headers"
+statement was wrong for the client (our probes were header-free).
+
+### 2.0 URL construction and request headers [BINARY + LIVE, 2026-09-07]
+
+#### 2.0.1 URL construction — no query parameters, ever
+
+- `build_update_url_base` (0x1402694D0) assembles the base with
+  `append_url_segment` (0x14026A280) over exactly 5 segments:
+  `[server, "pipeline/v2/update", appId, "win" (hardcoded literal), channel]`.
+- Endpoint builders (all = base + fixed suffix, **no query parameters anywhere
+  in the binary**):
+  | Builder | Address | Suffix |
+  |---|---|---|
+  | `build_update_json_url` | 0x140269710 | `/update.json` |
+  | `build_details_json_url` | 0x140269C90 | `/details.json` |
+  | `build_settings_url` | 0x14026A150 | `/settings` (**no `.json`**) |
+- The **server host is not a literal in the binary** (`updates.ghub.logitechg.com`
+  is absent): it comes from the Settings singleton
+  `GetSettingString` (0x140EE2990, `lghub\servers.cpp`) or the protobuf IPC
+  field `Channel.pipeline_host`.
+
+#### 2.0.2 Request headers: `logi-install-id` + `logi-app-version`
+
+Every pipeline JSON request (update.json, details.json, `/settings`) is built
+with `pipeline_build_install_headers` (0x14022BE90), which fills a string map
+(nodes 0x50 B; key @+32, value @+48; lookup `install_header_map_get`
+0x14022B2A0) with exactly two entries:
+
+| Header | Value source |
+|---|---|
+| `logi-install-id` | machine identifier string, stored at `pipeline_impl+880` |
+| `logi-app-version` | Downloader vfunc 6 (+48) — the app version string |
+
+Callers confirmed: `_check_for_updates` (0x1402142E0, update.json job
+sub_1402594E0), `pipeline_impl_on_update_check_result` (0x140228430,
+details.json job sub_14025AFC0 — renamed from the earlier misnomer
+`create_details_download_job`), `create_settings_download_job` (0x140216840,
+`/settings` job sub_14020FF10). Optional extra headers may be merged from
+Downloader vfunc 44 (+352).
+
+#### 2.0.3 H6 [CONFIRMED] — machine identifier generation, persistence, and
+server-side canary bucketing
+
+**Generation** (`pipeline_impl_builder_createMachineIdentifier` 0x1401FDF50,
+called from `pipeline_impl_builder_build` 0x1401FD930):
+- canary config type == 1 → `canary_machine_id_derive_name_volume`
+  (0x140A386E0): `GetComputerNameW(WCHAR[16])` +
+  `GetVolumeInformationW(L"c:\\")` volume serial, then **SHA-256** over the
+  full name buffer (UTF-16LE, NUL included; `sha256_update(Buffer, 2*nSize[0])`)
+  + 4-byte LE volume serial → 64-char lowercase hex (stringstream, `setw(2)`
+  fill `'0'`). SHA-256 confirmed by K constants
+  (0x6A09E667…0x5BE0CD19; init 0x140AB88E0 / update 0x140AB8960 /
+  final 0x140AB85B0).
+- type != 1 → `systeminfo_get_machine_serial` (0x140A34560, HDD serial,
+  `logi_platform\src\system_info_win.cpp`) + transform `sub_140A34940`
+  (unmapped).
+- Log lines: `Canary - Generated machine identifier %s`,
+  `Canary - Saved machine identifier`.
+
+**Persistence** (load-or-generate): `canary_machine_id_load` 0x14022BE30 /
+`canary_machine_id_save` 0x14022C0E0 via logi_platform `SecureStorage`
+(container name "Logi Secure Storage"; open 0x140A49110 / read 0x140A497E0 /
+write 0x140A496B0 / close 0x140A49360; serializer sub_140A61330; source
+`…\secure_storage_impl_win.cpp` per path @0x141048D00). An existing value with
+equal length + memcmp skips the write. Local container:
+`HKLM\SOFTWARE\Logitech\LGHUB\Data\canary_machine_identifier`, REG_BINARY
+(**396 B** as of 2026-09-07; earlier 415-B count superseded):
+DWORD 1 @0; GUIDs @4/@0x17; UTF-16 "Logi Secure Storage" @0x2F; length 0x40
+@0x148 + 64-byte value @0x14C (opaque on this machine — see §14u).
+
+**Server behavior [LIVE 2026-09-07, `probe_h6_headers.mjs`,
+`probe_h6_ids.mjs`, `probe_h6_rest.mjs`]:** the server buckets installs by the
+`logi-install-id` header value (deterministic; repeat ⇒ same ETag, ~46 ms):
+
+| `logi-install-id` | ghub10/win `details.json` channel |
+|---|---|
+| header absent / empty | `public` |
+| `0123…` (64-hex) | `canary` |
+| `0000…` (64-hex) | `canary` |
+| `aaaa…` (64-hex) | `canary` |
+| `1111…` (64-hex) | `canary` |
+| `ffff…` (64-hex) | `public` |
+| `deadbeef…` | `public` |
+
+~4/6 well-formed 64-hex ids bucket to canary ⇒ per-value hash threshold on
+the server. For ghub10/win the canary and public buckets serve **identical
+build content** (buildId 634218, version 2025.9.814156); bodies are 938,799 B
+each and differ only in the `channel` and `lastModified` fields. ETags:
+public `W/"93208d1198a5be93a085849b1f128ee9"`, canary
+`W/"be3b37fbb5a956a7d212b9daad830317"` (weak validators, CloudFront-cached
+per (channel, id-bucket)). `update.json` buckets identically (§3.3).
+
+**Version decision [BINARY]:** `pipeline_impl_has_new_build_to_download`
+(0x1402185D0) compares versions by **plain string equality, not semver**:
+current==next ⇒ "…same build already installed… Ignoring this build." (0);
+old-next==new-next ⇒ "Next build did not change…" (0); else "Found new version
+to download…" (1). The updater is **downgrade-capable** (any different string
+counts as new).
+
+#### 2.0.4 FeatureCanary is fed by `/settings` [BINARY, 2026-09-07]
+
+RTTI for the `FeatureCanary::start` lambda_1 is
+`std::function<void(const logi::protocol::updates::Settings&, int)>` — i.e.
+the canary component/flag tree comes from the **`/settings` response**
+(`logi.protocol.updater.Settings` proto-JSON), with the `int` = HTTP status.
+Since `/settings` 403s on this host, FeatureCanary state ends at 3
+("Download failed with error code %d"). `FeatureCanary_get_flag`
+(0x140124460) → `FeatureCanary_lookup_flag` (0x1401236B0) does a two-level
+tree lookup (component → flag) with **no local machine-id bucketing**;
+`FeatureCanary_parse_settings` (0x1401237C0) builds the tree and logs
+"Non-object component group found for key %s, skipping…" /
+"Flag defaults not set for %s:%s"; catch handler 0x140E6DFB0
+"Exception parsing settings JSON %s".
+
+#### 2.0.5 `pipeline_impl` object layout (size 0x3B0) [BINARY]
+
+`pipeline_impl_make_shared` 0x1402262E0 → `pipeline_impl_ctor` 0x140210320
+(vftable "logi::pipeline::pipeline_impl::vftable" @0x140F492F0):
++0/+8 double vftable; +56 Downloader sp; +120 = 15000 ms timeout; +128 base
+dir (cache root = base+"cache"); +296 keymaster sp; +320 config sp; +336
+storage sp; +352 cache-dir obj; +376/+392/+408 = config+432/448/464 sps;
++424 updates::Status vftable; +456 update state (2/3/12); +776 recursive
+mutex; +880..+912 **machine identifier string**; +912..+944 channel
+(config+32). Builder: `pipeline_impl_builder_build` (0x1401FD930) —
+builder+72 set ⇒ caller-supplied id @builder+56, else
+createMachineIdentifier; poll interval default **86400 s** (builder+48
+override); update check entry `pipeline_impl::_check_for_updates`
+(0x1402142E0): updates-disabled guard (+368), min-OS check vs config+216
+(status 13 if too old), then update.json job.
 
 ### 2.1 Update manifest endpoints
 
@@ -233,11 +364,22 @@ signature/key envelope in v2.
 }
 ```
 
-### 3.4 `settings.settings`
+**[LIVE 2026-09-07]** `update.json` is bucketed by `logi-install-id` exactly
+like `details.json` (same probe set, `probe_h6_rest.mjs`): canary-bucketed id
+returns `"channel": "canary"` with the canary `lastModified`; the only fields
+that differ between buckets are `channel` and `lastModified` (body stays
+197 B).
+
+### 3.4 `settings.settings` / `/settings`
 
 **403** on all live probes (public and canary). Body is S3 `AccessDenied`
-XML. **[UNRESOLVED]** its schema, whether it requires auth, or whether it is
-dead. The binary contains config keys (see §8) that may be served by it.
+XML. The binary's actual path suffix is **`/settings`** (9 B literal, no
+`.json`); the expected response is a `logi.protocol.updates.Settings`
+proto-JSON (`{"settingsJson": "..."}` per the code comment) and it feeds
+FeatureCanary (§2.0.4). On this host the object is not exposed (403 on both
+`settings.settings` and the code path's `/settings`), so the schema remains
+unobserved live — **[UNRESOLVED]** whether the object is dead here or
+restricted by policy.
 
 ---
 
@@ -821,6 +963,9 @@ hint at regional deployment and a lockdown mode, both **[UNRESOLVED]**.
 | 60 depot first-512 B prefixes (magic scan) | 36× `0x20170110`, 24× `0x20210506`, 0× `0x20210521` |
 | Re-probe 2026-09-07 (fixed script, same 17 paths) | Identical statuses/sizes: 8× 200 (938,799 / 197 / 992,526 / 197 / 938,799 / 197 / 224,746 / 197 B), 8× 403 S3-XML, root 403 0 B `text/html`. New data: `etag` + `Last-Modified` on every 200 (below); v1 `update.json` (ghub12) = 200; ghub12 buildId 710935 / version 2026.2.861817 |
 | H3 probe 2026-09-07 (`probe_h3_s3.ps1`, `probe_h3_cf_https.mjs`) | `http://2pipeline.s3.amazonaws.com/depots/780f7572-…/g560_dfu.depot` **200** 632 B, SHA-256 = manifest `mac`; same depot path on `updates.ghub.logitechg.com`: **403 over HTTP**, **200 over HTTPS with `server: AmazonS3`** (S3 alias, not CloudFront) |
+| H6 headers probe 2026-09-07 (`probe_h6_headers.mjs`, outdir `reprobe_h6_headers_2026-09-07/`) | `details.json` with `logi-install-id: 0123…` (64-hex) → **different body** than header-less: `channel` public→canary, same 938,799 B, different weak ETag (`W/"be3b37fb…"` vs `W/"93208d11…"`) — **server-side identity bucketing proven** |
+| H6 ids probe 2026-09-07 (`probe_h6_ids.mjs`, outdir `reprobe_h6_ids_2026-09-07/`) | 7-request channel table: absent/empty → public; `0123/0000/aaaa/1111` → canary; `ffff`/`deadbeef` → public; repeat of one id ⇒ same ETag in 46 ms (deterministic, ~4/6 64-hex ids canary) |
+| H6 rest probe 2026-09-07 (`probe_h6_rest.mjs`, outdir `reprobe_h6_rest_2026-09-07/`) | `update.json` ×2 buckets identically to details.json (197 B; only `channel`+`lastModified` differ); `/settings` ×2 → **403** S3 `AccessDenied` XML (code-path suffix, no `.json`) |
 
 **[LIVE] Cache semantics (2026-09-07 re-probe,
 `RE_Work/probes/reprobe_2026_09_07/probe_summary.json`):** every 200 carries
@@ -872,6 +1017,11 @@ evidence bodies in `RE_Work/probes/` are untouched.
 | plain-depot framing verifier, PASS×5 exact EOF (§5.1) | `RE_Work/probes/check_plain_framing.mjs` |
 | header-sha ≠ sha256(header bytes); it hashes chunk-0 plaintext (§5.2) | `RE_Work/probes/check_headersha.mjs` |
 | manifest v2 depot entries carry no iv/key/cipherSuite (§5.2) | `RE_Work/probes/check_iv_source.mjs` |
+| H6 header probe (install-id flips channel) + summary | `RE_Work/probes/probe_h6_headers.mjs`, `RE_Work/probes/reprobe_h6_headers_2026-09-07/` |
+| H6 id-bucketing table (7 ids → channel) | `RE_Work/probes/probe_h6_ids.mjs`, `RE_Work/probes/reprobe_h6_ids_2026-09-07/` |
+| H6 update.json bucketing + `/settings` 403 | `RE_Work/probes/probe_h6_rest.mjs`, `RE_Work/probes/reprobe_h6_rest_2026-09-07/` |
+| SecureStorage blob hex (396 B) + machine-id variant tests | `RE_Work/probes/h6_blob_full.txt`, `RE_Work/probes/h6_variant_test.mjs`, `RE_Work/probes/h6_variant2.mjs` |
+| local update log (software manager 2026-08-08, H7) | `C:\ProgramData\Logi\GHUB\Logs\software_manager\lghub_08_08_2026.log` |
 | IDB (all renames/comments saved) | `C:\Program Files\LGHUB\lghub_updater.exe.i64` |
 
 **STALE, to delete:** `RE_Work/probes/resp_pipeline_v2_update_ghub10_win_public_details.json`
@@ -953,6 +1103,32 @@ evidence bodies in `RE_Work/probes/` are untouched.
     `updates.ghub.logitechg.com/depots/…` is the **same S3 bucket via alias**
     (`server: AmazonS3`, HTTPS 200, byte-identical; the HTTP listener 403s
     the depot path) (§2.2, §9).
+19. **Request headers on all pipeline JSON requests** —
+    `pipeline_build_install_headers` (0x14022BE90) sends exactly
+    `logi-install-id` (machine id @pipeline_impl+880) + `logi-app-version`
+    (Downloader vfunc6) on update.json/details.json/`/settings`; URL builders
+    are 5-segment base + suffix with **no query parameters**; host from
+    settings/IPC, not a literal (§2.0.1, §2.0.2).
+20. **H6 machine identifier chain** — type-1 id = 64-hex SHA-256(computer
+    name UTF-16LE incl. NUL + C: volume serial LE32)
+    (`canary_machine_id_derive_name_volume` 0x140A386E0); else HDD serial +
+    transform (0x140A34940 unmapped); persisted load-or-generate in logi
+    SecureStorage container
+    `HKLM\SOFTWARE\Logitech\LGHUB\Data\canary_machine_identifier` (396 B
+    REG_BINARY) (§2.0.3).
+21. **Server-side canary bucketing** — deterministic per
+    `logi-install-id` value (~4/6 64-hex test ids → canary; absent/empty →
+    public); canary/public content for ghub10/win identical apart from
+    `channel`+`lastModified` (§2.0.3, §9). This **supersedes** the earlier
+    "stateless API, same manifest for everyone" reading.
+22. **Version decision = plain string equality** (not semver);
+    downgrade-capable (`pipeline_impl_has_new_build_to_download`
+    0x1402185D0) (§2.0.3).
+23. **FeatureCanary fed by `/settings`** — lambda_1 signature
+    `void(const logi::protocol::updates::Settings&, int)`; two-level
+    component→flag tree, no local bucketing; `/settings` 403 here ⇒ canary
+    download state 3 (§2.0.4). Update-flow entry `_check_for_updates`
+    (0x1402142E0) + `pipeline_impl` 0x3B0 layout confirmed (§2.0.5).
 
 ## 12. Active hypotheses
 
@@ -963,8 +1139,8 @@ evidence bodies in `RE_Work/probes/` are untouched.
 | H3 | v2 relative depot URLs also resolve on `2pipeline.s3.amazonaws.com` | **CONFIRMED (2026-09-07):** S3 origin serves `/depots/{uuid}/{name}.depot` with 200 + mac-match, and `updates.ghub.logitechg.com/depots/…` returns `server: AmazonS3` (S3 alias, not CloudFront) — §2.2, §9 |
 | H4 | GCM is used without tag authentication (tag dropped), matching the C++ reference ignoring `Final` | **CONFIRMED for capsule depots** (2026-09-07): both tag layouts fail auth, all chunks decrypt tagless — see §5.2 |
 | H5 | `0x20210521` depots appear only for newer builds | **Layout resolved in binary** (2026-09-07): `files-sha` single-file capsule, full flow in §5.3 — still no live sample captured |
-| H6 | `canary_machine_identifier` gates canary-channel delivery per machine | Look for the setter/getter in IDB |
-| H7 | Local install 2026.6.957899 is newer than served public 2025.9.814156 because the local machine is on a different channel (canary/enterprise) or the public channel was rolled back | Compare canary manifest content; check local channel config |
+| H6 | `canary_machine_identifier` gates canary-channel delivery per machine | **CONFIRMED (2026-09-07):** full chain mapped (generation → SecureStorage persistence → `logi-install-id` header) and bucketing proven live (deterministic per id value; ~4/6 64-hex ids → canary) — §2.0.3, §9, §11.20-21. Open detail: server hash/threshold, and byte-level repro of this machine's stored value (§14u) |
+| H7 | Local install 2026.6.957899 is newer than served public 2025.9.814156 because the local machine is on a different channel (canary/enterprise) or the public channel was rolled back | **Partially answered (2026-09-07):** local `lghub_updater.exe` 2026.5.939708 / software manager 2026.5.9708.0 (log 2026-08-08, depot 824196, live self-update SUCCESS) is newer than **every** live channel observed (ghub10 2025.9.814156, ghub12 2026.2.861817); canary==public content on ghub10, so channel alone doesn't explain it. The `User-Agent: 2026.6.957899` string's origin remains unresolved (§14x) |
 
 ## 13. Disproven / corrected claims
 
@@ -980,6 +1156,8 @@ evidence bodies in `RE_Work/probes/` are untouched.
 | "The `header-sha` literal is absent from the binary" | **Wrong** — present @0x140F46778; the field name is a runtime parameter passed to `parse_capsule_header` (xrefs 0x14020b331, 0x14023e986) (§5.2) |
 | "IV seed comes from the manifest depot entry (iv/key fields)" | **Wrong** — live v2 depot entries carry only name/size/url/mac/signatures (no iv/key/cipherSuite); the IV seed is the per-chunk expected-plaintext SHA hex string (§5.2, `check_iv_source.mjs`) |
 | "The protected resource stream's `+0xC0` field is the file's display name" | **Wrong (2026-09-07)** — `+0xC0` holds the record's **sha string**, copied underflow-time into the protection context's PBKDF2 password slot `ctx+0x58`; the display name is never used for decryption (§5.8, §11.16) |
+| "The API is stateless — same `details.json`/`update.json` for everyone" | **Wrong (2026-09-07, H6)** — the server buckets by the `logi-install-id` request header: same build but `channel` flips public↔canary (and `lastModified` changes) per id value; deterministic per id. Header-absent requests default to public (§2.0.3, §9, §11.21) |
+| "`sub_1400DC1F0` is a 16-byte string hash used to build the header map" | **Wrong (2026-09-07)** — it is `std::vector<uint64_t>::resize(n, fill)`; the map node's `+24` vector is filled with node pointers, not a digest. No hashing in the header path (§2.0.2) |
 
 ## 14. Unresolved questions
 
@@ -1000,7 +1178,13 @@ e. **Second `header-sha` caller `sub_14023E920`** — xref 0x14023e986 of the
 f. **Compression** — **resolved (2026-09-07): xz only** (type code 2, literal `xz`), optional per depot via the header `compression` field; stream order decrypt → decompress (`build_capsule_stream_chain` 0x140240B40, `DecompressedStream_ctor` 0x140272C00) (§8).
 g. **xdelta differential depot** layout.
 h. **Depot variants** beyond the 3 magics (if any).
-i. **Local 2026.6.957899 > live 2025.9.814156** — channel or rollback?
+i. **Local 2026.6.957899 > live 2025.9.814156** — **partially answered
+   (2026-09-07):** local binaries (updater 2026.5.939708, software manager
+   2026.5.9708.0 per `lghub_08_08_2026.log`) are newer than every observed
+   live channel (ghub10 2025.9.814156 incl. canary; ghub12 2026.2.861817);
+   canary==public content on ghub10 rules out a pure channel explanation.
+   Open: where does the `2026.6.957899` UA string come from, and which
+   appId/channel does this machine actually poll (§14x)?
 j. **`/scarif/keyswap`** semantics.
 k. **CN/staging hosts** behavior.
 l. **Two unexplained embedded base64 blobs** (54 B / 48 B) in the binary.
@@ -1028,6 +1212,29 @@ t. **Post-factory result chain** — `sub_14023F0D0`/`sub_14023F020`
    (post-factory check), `sub_14023ED10` (metadata query), `sub_14026F6C0`
    (41-B result assembly) and the buffer over-capacity handler
    `sub_14017FDC0` remain unmapped (§5.8).
+u. **Machine-id byte reproduction / SecureStorage container format** —
+    type-1 formula re-computed from this machine's current inputs
+    (name `DESKTOP-IFDD7ML` + C: vol serial `0xFA6C8AA7`) does **not** match
+    the stored 64-byte value (blob tail @0x14C; nor SHA-512 nor name/vol
+    variants — `RE_Work/probes/h6_variant_test.mjs`, `h6_variant2.mjs`).
+    Either the container value is transformed/encrypted by SecureStorage,
+    the id predates a rename/reformat (stale inputs), or this machine uses
+    the type≠1 (HDD serial) path. Container layout: len-prefixed fields
+    ([4][40]"Logi Secure Storage" … [0x40][64 B value]); GUIDs @4/@0x17/@0x64/@0x99
+    role unknown.
+v. **Server-side bucket algorithm** — which hash/threshold over the id
+    string (deterministic, ~4/6 64-hex sample → canary; non-64-hex or
+    malformed → public; absent/empty → public).
+w. **`logi-app-version` effect** — all probes used the same value; whether
+    the server keys anything (compatibility gating, A/B) off it is unknown.
+x. **`User-Agent: 2026.6.957899` origin** — raw literal
+    `User-Agent: GHubDownloader/1.0\r\n` exists at 0x140F9F080 (code path
+    untraced); the UA used by our depot fetches is a probe-side string, and
+    the 2026.6.957899 build number's source (a newer canary build? an
+    enterprise channel?) is unresolved.
+y. **86400 s poll interval purpose** — `pipeline_impl_builder_build`
+    default; how it maps to scheduler behavior (and whether `/settings` or
+    config can change it) is untraced.
 
 ## 15. Exact reproduction
 
@@ -1075,6 +1282,16 @@ Live H3 probe (2 depot GETs, one per host; new OutDir; §2.2 / §9):
 & "RE_Work\probes\probe_h3_s3.ps1" -OutDir "RE_Work\probes\reprobe_2026_09_07_h3"
 node RE_Work/probes/probe_h3_cf_https.mjs
 #    → s3_origin 200 632 B mac-match=True ; cloudfront HTTP 403 ; HTTPS 200 server: AmazonS3
+
+# 14. LIVE H6: identity headers flip the served channel (§2.0.3, §11.19-22;
+#     sequential requests, 400-800 ms apart; new OutDir per run):
+node RE_Work/probes/probe_h6_headers.mjs   # details.json ± logi-install-id
+node RE_Work/probes/probe_h6_ids.mjs       # 7 ids → channel table
+node RE_Work/probes/probe_h6_rest.mjs      # update.json bucketing + /settings 403
+# 15. LIVE machine-id derivation cross-check (offline recompute vs stored
+#     HKLM SecureStorage blob — expected to MISMATCH on this machine, §14u):
+node RE_Work/probes/h6_variant_test.mjs
+node RE_Work/probes/h6_variant2.mjs
 ```
 
 Live re-probe (only if needed; keep it small): see §17.

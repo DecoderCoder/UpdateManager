@@ -1,0 +1,16 @@
+status: 200
+connection: keep-alive
+content-encoding: br
+content-type: application/json
+date: Mon, 07 Sep 2026 08:38:20 GMT
+etag: W/"93208d1198a5be93a085849b1f128ee9"
+last-modified: Mon, 08 Jun 2026 17:02:46 GMT
+server: AmazonS3
+transfer-encoding: chunked
+vary: Accept-Encoding
+via: 1.1 2b1612841a34d0b952bac28f3e65cb40.cloudfront.net (CloudFront)
+x-amz-cf-id: D02cF-c1VXTpKIi0BAKmP6Hc33Urf1x7nbe8bkzNhehhz6e4AGGhQQ==
+x-amz-cf-pop: HAM50-P4
+x-amz-server-side-encryption: AES256
+x-cache: Miss from cloudfront
+

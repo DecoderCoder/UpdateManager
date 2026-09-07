@@ -1,0 +1,14 @@
+{
+  "app": "ghub10",
+  "channel": "public",
+  "update_json": {
+    "noid": "c6707c3681e79e8b9b75067944c2a6bf02ea8c4ec03507c6b73d6ac1bb8258a6",
+    "id": "77a90c8a0d6c086fcdf9f455954c6a987fdf7866c43ffac53c7ff53fbdad4677",
+    "identical": false
+  },
+  "settings": {
+    "noid": "8629ae700af2d2ffd65c232ddcefa3b9cd63edcd0907741dde85c6a7da1f1e4c",
+    "id": "93437d88abe66832529aa9c866d7478344c104af2c292c177dbe871d7db4c249",
+    "identical": false
+  }
+}

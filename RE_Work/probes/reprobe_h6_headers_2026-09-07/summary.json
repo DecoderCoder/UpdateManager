@@ -1,0 +1,10 @@
+{
+  "app": "ghub10",
+  "channel": "public",
+  "base": "https://updates.ghub.logitechg.com/pipeline/v2/update/ghub10/win/public/details.json",
+  "nohdr": "9f4f8fd568f5ce4412b03a63426396ded73c102a4c2d0f33cc8e89c973bf9796",
+  "installid": "918409d2fd643fecc653aa5d3db6a289676b110507313c1a5e8f22b250eafc14",
+  "installid2": "918409d2fd643fecc653aa5d3db6a289676b110507313c1a5e8f22b250eafc14",
+  "nohdr_equals_installid": false,
+  "installid_deterministic": true
+}

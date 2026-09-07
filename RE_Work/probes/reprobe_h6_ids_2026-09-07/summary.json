@@ -1,0 +1,75 @@
+{
+  "app": "ghub10",
+  "requested_channel": "public",
+  "rows": [
+    {
+      "name": "id1",
+      "id": "01234567...",
+      "status": 200,
+      "channel": "canary",
+      "buildId": 634218,
+      "version": "2025.9.814156",
+      "branch": "staging/2025_9_ghub10",
+      "etag": "W/\"be3b37fbb5a956a7d212b9daad830317\""
+    },
+    {
+      "name": "id2",
+      "id": "ffffffff...",
+      "status": 200,
+      "channel": "public",
+      "buildId": 634218,
+      "version": "2025.9.814156",
+      "branch": "staging/2025_9_ghub10",
+      "etag": "W/\"93208d1198a5be93a085849b1f128ee9\""
+    },
+    {
+      "name": "id3",
+      "id": "deadbeef...",
+      "status": 200,
+      "channel": "public",
+      "buildId": 634218,
+      "version": "2025.9.814156",
+      "branch": "staging/2025_9_ghub10",
+      "etag": "W/\"93208d1198a5be93a085849b1f128ee9\""
+    },
+    {
+      "name": "id4",
+      "id": "00000000...",
+      "status": 200,
+      "channel": "canary",
+      "buildId": 634218,
+      "version": "2025.9.814156",
+      "branch": "staging/2025_9_ghub10",
+      "etag": "W/\"be3b37fbb5a956a7d212b9daad830317\""
+    },
+    {
+      "name": "id5",
+      "id": "aaaaaaaa...",
+      "status": 200,
+      "channel": "canary",
+      "buildId": 634218,
+      "version": "2025.9.814156",
+      "branch": "staging/2025_9_ghub10",
+      "etag": "W/\"be3b37fbb5a956a7d212b9daad830317\""
+    },
+    {
+      "name": "id6",
+      "id": "11111111...",
+      "status": 200,
+      "channel": "canary",
+      "buildId": 634218,
+      "version": "2025.9.814156",
+      "branch": "staging/2025_9_ghub10",
+      "etag": "W/\"be3b37fbb5a956a7d212b9daad830317\""
+    },
+    {
+      "name": "empty",
+      "id": "(empty)",
+      "status": 200,
+      "channel": "public",
+      "buildId": 634218,
+      "version": "2025.9.814156",
+      "etag": "W/\"93208d1198a5be93a085849b1f128ee9\""
+    }
+  ]
+}
