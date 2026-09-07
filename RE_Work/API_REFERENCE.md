@@ -87,10 +87,16 @@ statement was wrong for the client (our probes were header-free).
   | `build_update_json_url` | 0x140269710 | `/update.json` |
   | `build_details_json_url` | 0x140269C90 | `/details.json` |
   | `build_settings_url` | 0x14026A150 | `/settings` (**no `.json`**) |
-- The **server host is not a literal in the binary** (`updates.ghub.logitechg.com`
-  is absent): it comes from the Settings singleton
-  `GetSettingString` (0x140EE2990, `lghub\servers.cpp`) or the protobuf IPC
-  field `Channel.pipeline_host`.
+- **[CORRECTED 2026-09-07]** an earlier version of this section claimed
+  `updates.ghub.logitechg.com` is *absent* from the binary — wrong: it is a
+  literal (string-table line 22787 of
+  `RE_Work/samples/lghub_updater_strings.txt`) and is element 0 of the
+  4-host array (§1.1). The **runtime** host used for requests comes from
+  the Settings singleton `GetSettingString` (0x140EE2990,
+  `lghub\servers.cpp`) or the protobuf IPC field `Channel.pipeline_host`;
+  the 4-host array is a static candidate set (default/fallback —
+  **[HYPOTHESIS]**, its selection order not yet traced), and the configured
+  host is validated against the memcmp allowlist table @0x140E01248.
 
 #### 2.0.2 Request headers: `logi-install-id` + `logi-app-version`
 
@@ -124,9 +130,12 @@ called from `pipeline_impl_builder_build` 0x1401FD930):
   fill `'0'`). SHA-256 confirmed by K constants
   (0x6A09E667…0x5BE0CD19; init 0x140AB88E0 / update 0x140AB8960 /
   final 0x140AB85B0).
-- type != 1 → `systeminfo_get_machine_serial` (0x140A34560, HDD serial,
-  `logi_platform\src\system_info_win.cpp`) + transform `sub_140A34940`
-  (unmapped).
+- type != 1 → **[CORRECTED 2026-09-07]** `sub_1401FDF50` calls
+  `SystemInfo::GetVolumeSerial` (0x140A34940 → logi_platform system_info
+  wrapper; the earlier "HDD serial" attribution was wrong) and uses the
+  **decimal string** of the C: volume serial as the identifier — on this
+  machine `4199704679` (10 ASCII digits, no hash). The transform
+  `sub_140A34940` is this decimal-string conversion, now mapped.
 - Log lines: `Canary - Generated machine identifier %s`,
   `Canary - Saved machine identifier`.
 
@@ -193,8 +202,10 @@ tree lookup (component → flag) with **no local machine-id bucketing**;
 dir (cache root = base+"cache"); +296 keymaster sp; +320 config sp; +336
 storage sp; +352 cache-dir obj; +376/+392/+408 = config+432/448/464 sps;
 +424 updates::Status vftable; +456 update state (2/3/12); +776 recursive
-mutex; +880..+912 **machine identifier string**; +912..+944 channel
-(config+32). Builder: `pipeline_impl_builder_build` (0x1401FD930) —
+mutex; +880..+912 **machine identifier string**; +912..+944 **app id** string
+(e.g. `ghub10`) — **[CORRECTED 2026-09-07]**, not the channel:
+`pipeline_impl_on_update_check_result` (0x140228430) reads a1+912 as the
+app id; the channel travels in the urlctx (config+32). Builder: `pipeline_impl_builder_build` (0x1401FD930) —
 builder+72 set ⇒ caller-supplied id @builder+56, else
 createMachineIdentifier; poll interval default **86400 s** (builder+48
 override); update check entry `pipeline_impl::_check_for_updates`
@@ -207,15 +218,22 @@ override); update check entry `pipeline_impl::_check_for_updates`
 |---|---|---|---|
 | `/pipeline/v2/update/{appId}/{platform}/{channel}/details.json` | GET | **200** — full depot list + signatures + keymaster group | `resp_pipeline_v2_update_ghub10_win_public_details.json.json` (938,799 B), `..._ghub12_win_public_details.json.json` (992,526 B) |
 | `/pipeline/v2/update/{appId}/{platform}/{channel}/update.json` | GET | **200** — manifest pointer (no depots) | `resp_pipeline_v2_update_ghub10_win_public_update.json.json` (197 B) |
-| `/pipeline/v2/update/{appId}/{platform}/{channel}/settings.settings` | GET | **403** — S3 `AccessDenied` XML (263 B) | `resp_pipeline_v2_update_ghub10_win_public_settings.settings`; also 403 for `ghub10/win/canary` (243 B) |
+| `/pipeline/v2/update/{appId}/{platform}/{channel}/settings` (the client's actual suffix, no `.json`) | GET | **403** — S3 `AccessDenied` XML (263 B public / 243 B canary) | `reprobe_h6_rest_2026-09-07/` (2026-09-07 re-probe) |
+| `…/settings.settings` (typo-suffix probed 2026-09-06 — **not** the client's path) | GET | **403** — S3 `AccessDenied` XML (263 B public / 243 B canary) | `resp_pipeline_v2_update_ghub10_win_public_settings.settings` |
 | `/pipeline/v1/update/{appId}/{platform}/{channel}/details.json` | GET | **200** — v1 manifest (absolute S3 depot URLs, no signatures/keys) | `resp_pipeline_v1_update_ghub10_win_public_details.json.json` (224,746 B) |
 
 Observed `appId` values: `ghub10` (G HUB 2025.9 line), `ghub12`.
-Observed `platform`: `win`. Observed `channel`: `public`, `canary`.
-**[HYPOTHESIS]** The path is a plain S3-style key under a CloudFront/S3
-front (root `/` returns 403 0 B, `settings.settings` returns S3 XML errors),
-i.e. the whole thing is object storage with an access policy. No API
-documentation or auth headers were found in the binary for these paths.
+Observed `platform`: `win`. Observed `channel`: `public`, `canary`
+(200, plaintext JSON), `tim`, `staging` (200, **opaque** bodies — §2.5);
+14 further probed names → 403.
+**[LIVE]** The path is a plain S3-style key under a **CloudFront front with
+S3 origin** — captured responses carry both `server: AmazonS3` and
+CloudFront participation headers (`via: …cloudfront.net (CloudFront)`,
+`x-amz-cf-id`, `x-amz-cf-pop`, `x-cache: Hit|Miss from cloudfront`,
+`x-amz-server-side-encryption: AES256`); root `/` returns 403 0 B and
+unknown keys return S3 `AccessDenied` XML. I.e. the whole thing is object
+storage behind a CDN, with an access policy. No API documentation or auth
+headers were found in the binary for these paths.
 
 **[LIVE] canary vs public:** `ghub10/win/canary/details.json` and
 `ghub10/win/public/details.json` are the same size (938,799 B) but **not
@@ -236,13 +254,21 @@ coincidence of the one-day field difference. Same buildId/version for both
 origin: `http://2pipeline.s3.amazonaws.com/depots/780f7572-…/g560_dfu.depot`
 → 200, 632 B, SHA-256 = manifest `mac`
 (`RE_Work/probes/reprobe_2026_09_07_h3/h3_s3_origin.depot`).
-**[CONFIRMED 2026-09-07]** `/depots/...` is **served directly by S3** — the
-`server: AmazonS3` response header on
-`https://updates.ghub.logitechg.com/depots/…` (200, 632 B, byte-identical to
-the S3-origin copy) shows the logitechg.com host is an S3 alias of the
-`2pipeline` bucket, not a CloudFront distribution. Note: the **HTTP**
-listener of `updates.ghub.logitechg.com` answers the same depot path with
-403 (protocol-level block; HTTPS works) — always use HTTPS for that host.
+**[CONFIRMED 2026-09-07; CORRECTED this round]** the
+`updates.ghub.logitechg.com` host is a **CloudFront distribution with S3
+origin**, not a bare S3 bucket alias: the captured manifest responses
+(`reprobe_channel_names_2026-09-07/tim_details.resp.txt`,
+`reprobe_channel_brute_2026-09-07/staging_update.resp.txt`, and the
+2026-09-06 fixtures) carry **both** `server: AmazonS3` **and** CloudFront
+participation headers (`via: …cloudfront.net (CloudFront)`,
+`x-amz-cf-id`, `x-amz-cf-pop`, `x-cache: Hit|Miss from cloudfront`).
+S3-origin pass-through headers and CDN headers coexist — the earlier
+"not a CloudFront distribution" statement is **[DISPROVEN]**.
+(Per-object CDN pathing for depot objects is not recorded in the saved
+fixtures — the depot GETs stored bodies only — **[UNRESOLVED]**, minor.)
+Note: the **HTTP** listener of `updates.ghub.logitechg.com` answers the
+same depot path with 403 (protocol-level block; HTTPS works) — always use
+HTTPS for that host.
 
 ### 2.3 Keymaster / access endpoints
 
@@ -271,9 +297,92 @@ ghub12 → `e37b37e8-a368-477e-8cb9-2cc6cb1d8324`.
 
 - `/scarif/keyswap` — string present in the binary. **[UNRESOLVED]**
   semantics, method, auth.
-- Depot download progress / resume semantics — no ETag/Range behavior was
-  tested. The buggy `probe_http.ps1` never recorded `etag`/`cacheControl`
-  headers (see §16), so **nothing is known** about cache semantics.
+- Depot download progress / resume semantics — no Range behavior was
+  tested. (Response cache semantics — ETag/Last-Modified/Cache-Control —
+  were captured on the 2026-09-07 re-probe, see §9.)
+
+### 2.5 Channel census and encrypted channels [LIVE + OFFLINE, 2026-09-07]
+
+**Channel names are a free-form path segment.** The client has no
+channel whitelist: `pipeline_storage_get_valid_channel` (0x1402005A0)
+accepts whatever the config/IPC supplies; the server decides what exists.
+Probing 14 additional names (`dev, beta, test, nightly, latest, release,
+stable, main, master, trunk, preview, alpha, rc, prod`) returned
+**403 S3 `AccessDenied`** for every one — indistinguishable from a
+"not provisioned" object; there is no 404 surface.
+
+Live channel table for `ghub10/win` (both suffixes, 2026-09-07; fixtures
+in `RE_Work/probes/reprobe_channel_names_2026-09-07/` and
+`RE_Work/probes/reprobe_channel_brute_2026-09-07/`):
+
+| Channel | update.json | details.json |
+|---|---|---|
+| `public` | 200, 197 B, **plaintext JSON** | 200, 938,799 B, **plaintext JSON** (build 634218 / 2025.9.814156) |
+| `canary` | 200, 197 B, plaintext | 200, 938,799 B, plaintext, **same build as public but not byte-identical** (different ETags, `lastModified` differs by 1 day — §2.1) |
+| `tim` | 200, **207 B opaque** | 200, **809,601 B opaque** |
+| `staging` | 200, **198 B opaque** | 200, **938,800 B opaque** |
+| 14 other names | 403 S3 XML | 403 S3 XML |
+
+**Opaque bodies — documented, not decrypted.** All four tim/staging
+bodies: declared `Content-Type: application/json` but **fail JSON
+parse**; no known depot/capsule magic (`0x20170110` / `0x20210506` /
+`0x20210521`) at byte 0; high-entropy bytes from offset 0; no framing
+header (no key-id/uuid prefix) observed. ⇒ the encoding/protection and
+the server-side meaning are **[UNRESOLVED]**; the bytes must not be
+interpreted as any specific cipher or format.
+
+**Structural facts** (offline, computed on the saved bodies):
+
+1. In plaintext `public`, `details.json` is a **strict prefix extension**
+   of `update.json`: first 195 B identical; `details` continues the same
+   leading object by adding `"uuid": …` (and the rest of the manifest)
+   after the same seven fields (`appId, platform, channel, buildId,
+   version, branch, lastModified`).
+2. `tim`: update (207 B) and details (809,601 B) share a **205 B common
+   prefix**; `staging`: 196 of 198 / 938,800 B. The same "update.json is
+   the leading section of details.json" structure holds, and both
+   objects are encoded from byte 0 with the same keystream (equal
+   ciphertext prefix over the equal plaintext prefix, per fact 1).
+   For encoded channels, `update.json` is therefore the encoded leading
+   section — a truncated stream of the same construction. The mode/key
+   identity behind this is not established by these observations.
+3. Sizes: staging details = public + 1 B — *consistent with* the channel
+   value `"staging"` (7 chars) vs `"public"` (6 chars), **not proven**;
+   tim details = 809,601 B is 129,198 B smaller than public ⇒ the
+   manifest content (depot set) differs; tim's exact build is
+   unobservable while the body stays opaque.
+4. Per-object metadata (captures): `update.json` objects → **strong**
+   32-hex ETag, `accept-ranges: bytes`, no `br`; `details.json` objects →
+   **weak** ETag `W/"…32hex"`, `content-encoding: br`, chunked,
+   `vary: Accept-Encoding`. Last-Modified: tim 2026-08-13 (details
+   10:14:42Z / update 10:14:43Z — separate objects), staging
+   2025-12-10T22:39:18Z (both). All four: `x-amz-server-side-encryption:
+   AES256`, CloudFront `x-cache` Hit/Miss, S3 origin.
+
+**[DISPROVEN] earlier "recovery" of the staging body.**
+`reprobe_channel_brute_2026-09-07/staging_details_RECOVERED.json` is a
+**synthetic** artifact: `recover_staging.mjs` computed K = ct XOR
+assumedPlaintext and re-applied that same K to the same ciphertext
+(K = ct ⊕ A ⇒ ct ⊕ K = A) — it reproduces the *assumption* (the public
+JSON with the channel value swapped), not server data. It is excluded
+from the evidence about staging's content and must not be cited as a
+recovery. (The file remains in the tree, labeled, for audit.)
+
+**[CLOSED experiment] Bounded client key-material search — 0 hits.**
+All 71 access-group keys × 6 candidate modes, 1,426 derived key
+candidates (PBKDF2/SHA/HMAC combinations of group UUID, channel names,
+app ids, SSO client ids) × 6 modes, PBKDF2-IV variants, and an
+ECB-repeat-keystream check over 58,675 positions — **0 hits**
+(`test_ks_deep_result.json`, `test_ks_modes_result.json`). A failed
+candidate set does not disprove any particular algorithm; it only
+excludes the tested material. Corroborating: the updater binary contains
+**no** code path that decodes manifests (its only AES/GCM usage is the
+depot-capsule pipeline, §5.2). **Verdict: the key material for
+tim/staging is not in this updater build; the consumer component is
+[HYPOTHESIS] (e.g. the software manager) and remains unverified.**
+
+Coverage and open questions: `RE/API_VARIANT_MATRIX.md` (what was
+probed) and `RE/API_FINDINGS.md` (findings + unresolved hypotheses).
 
 ---
 
@@ -412,6 +521,19 @@ asserts this for the key used by the saved depot).
 empty!", code 702/703), and the content URL is built by
 `build_content_json_url` (0x1402692a0) = `/pipeline/v2/access/` +
 `{accessGroup-uuid}` + `/content.json`.
+
+**[CONFIRMED 2026-09-07] Key-by-name design.** The encrypted depot header
+field `key-id` (§5.2) is a **`name` of a key in this very list** — depots
+reference protection keys *by UUID name* rather than embedding them, and
+the client resolves the name through this endpoint + its local cache
+(`keys.json`, §18.3). Live cross-check on the saved sample depot:
+`key-id` `b895e0bb-0970-4eb5-a623-ab5abc2fddfd` is present in the ghub10
+group content.json (71 entries), entry =
+`{ name: b895e0bb-…, version: 1, lastModified: 1652975873 (2022-05-19T22:37:53Z),
+key: "L/zJSb8VtDMxwHGPKJRZEw==" (2ffcc949bf15b43331c0718f28945913) }`.
+Old-format depots (pre-`0x20210506`) embedded the full key object instead.
+Re-probed 2026-09-07: content.json body unchanged (11,536 B, same 71 keys;
+`RE_Work/probes/reprobe_access_keys_2026-09-07/`).
 
 ### 4.2 `iat.json`
 
@@ -962,10 +1084,13 @@ hint at regional deployment and a lockdown mode, both **[UNRESOLVED]**.
 | 6 depot objects under `https://updates.ghub.logitechg.com/depots/…` | 200; sizes+SHA-256 match manifest (`verify-saved-sample.mjs`) |
 | 60 depot first-512 B prefixes (magic scan) | 36× `0x20170110`, 24× `0x20210506`, 0× `0x20210521` |
 | Re-probe 2026-09-07 (fixed script, same 17 paths) | Identical statuses/sizes: 8× 200 (938,799 / 197 / 992,526 / 197 / 938,799 / 197 / 224,746 / 197 B), 8× 403 S3-XML, root 403 0 B `text/html`. New data: `etag` + `Last-Modified` on every 200 (below); v1 `update.json` (ghub12) = 200; ghub12 buildId 710935 / version 2026.2.861817 |
-| H3 probe 2026-09-07 (`probe_h3_s3.ps1`, `probe_h3_cf_https.mjs`) | `http://2pipeline.s3.amazonaws.com/depots/780f7572-…/g560_dfu.depot` **200** 632 B, SHA-256 = manifest `mac`; same depot path on `updates.ghub.logitechg.com`: **403 over HTTP**, **200 over HTTPS with `server: AmazonS3`** (S3 alias, not CloudFront) |
+| H3 probe 2026-09-07 (`probe_h3_s3.ps1`, `probe_h3_cf_https.mjs`) | `http://2pipeline.s3.amazonaws.com/depots/780f7572-…/g560_dfu.depot` **200** 632 B, SHA-256 = manifest `mac`; same depot path on `updates.ghub.logitechg.com`: **403 over HTTP**, **200 over HTTPS** (headers not captured for this object; manifest objects on the same host show CloudFront + S3-origin headers — §2.2) |
 | H6 headers probe 2026-09-07 (`probe_h6_headers.mjs`, outdir `reprobe_h6_headers_2026-09-07/`) | `details.json` with `logi-install-id: 0123…` (64-hex) → **different body** than header-less: `channel` public→canary, same 938,799 B, different weak ETag (`W/"be3b37fb…"` vs `W/"93208d11…"`) — **server-side identity bucketing proven** |
 | H6 ids probe 2026-09-07 (`probe_h6_ids.mjs`, outdir `reprobe_h6_ids_2026-09-07/`) | 7-request channel table: absent/empty → public; `0123/0000/aaaa/1111` → canary; `ffff`/`deadbeef` → public; repeat of one id ⇒ same ETag in 46 ms (deterministic, ~4/6 64-hex ids canary) |
 | H6 rest probe 2026-09-07 (`probe_h6_rest.mjs`, outdir `reprobe_h6_rest_2026-09-07/`) | `update.json` ×2 buckets identically to details.json (197 B; only `channel`+`lastModified` differ); `/settings` ×2 → **403** S3 `AccessDenied` XML (code-path suffix, no `.json`) |
+| Channel census 2026-09-07 (`probe_channel_names.mjs`, `probe_channel_brute.mjs`; outdirs `reprobe_channel_names_2026-09-07/`, `reprobe_channel_brute_2026-09-07/`) | `staging` 200 ct 938,800 B; `tim` 200 ct 809,601 B; `canary` 200 = public size; 14 other names → **403** S3 XML (§2.5) |
+| Access-group re-probe 2026-09-07 (`probe_access_keys.mjs`, outdir `reprobe_access_keys_2026-09-07/`) | content.json 200, 11,536 B, 71 keys (unchanged); iat.json 200 `{ "lastModified": 1765286821 }` (§4.1) |
+| v1/v2 cross-check 2026-09-07 (`reprobe_2026_09_07/*`) | ghub12 v1 `update.json` 200 (710935 / 2026.2.861817 / branch `staging/2026_2_ghub12`); ghub10 v1 details 200, 224,746 B = v2's 648 depots with `cipherSuite:"none"` + absolute S3 URLs, no `keys` (§3.2) |
 
 **[LIVE] Cache semantics (2026-09-07 re-probe,
 `RE_Work/probes/reprobe_2026_09_07/probe_summary.json`):** every 200 carries
@@ -1022,6 +1147,12 @@ evidence bodies in `RE_Work/probes/` are untouched.
 | H6 update.json bucketing + `/settings` 403 | `RE_Work/probes/probe_h6_rest.mjs`, `RE_Work/probes/reprobe_h6_rest_2026-09-07/` |
 | SecureStorage blob hex (396 B) + machine-id variant tests | `RE_Work/probes/h6_blob_full.txt`, `RE_Work/probes/h6_variant_test.mjs`, `RE_Work/probes/h6_variant2.mjs` |
 | local update log (software manager 2026-08-08, H7) | `C:\ProgramData\Logi\GHUB\Logs\software_manager\lghub_08_08_2026.log` |
+| staging/tim opaque bodies (captured, NOT decoded) + synthetic (circular) "recovery" kept for audit | `RE_Work/probes/reprobe_channel_brute_2026-09-07/staging_details.body`, `staging_update.body`, `staging_ks_analysis.json`; `staging_details_RECOVERED.json` = synthetic assumption artifact (§2.5, §13) |
+| encrypted-channel key search results (0 hits, §2.5) | `RE_Work/probes/reprobe_channel_brute_2026-09-07/test_ks_modes_result.json`, `test_ks_deep_result.json`, `brute_summary.json` |
+| channel census bodies (staging/tim/canary + 403s) | `RE_Work/probes/reprobe_channel_names_2026-09-07/`, `RE_Work/probes/reprobe_channel_brute_2026-09-07/staging_update.body`, `staging_details.body` |
+| access-group re-probe (content.json 71 keys, iat.json, SSO ids) | `RE_Work/probes/reprobe_access_keys_2026-09-07/content.json.body`, `iat.json.body`, `sso_client_ids.json` |
+| v1/v2 live bodies (2026-09-07) | `RE_Work/probes/reprobe_2026_09_07/*` (v1 update.json ghub12, v1/v2 details) |
+| GCM reference vectors (authoritative, §11.27) | `RE_Work/probes/gcm-spec.pdf/.txt`, `RE_Work/probes/sp800-38d.pdf/.txt` |
 | IDB (all renames/comments saved) | `C:\Program Files\LGHUB\lghub_updater.exe.i64` |
 
 **STALE, to delete:** `RE_Work/probes/resp_pipeline_v2_update_ghub10_win_public_details.json`
@@ -1099,27 +1230,33 @@ evidence bodies in `RE_Work/probes/` are untouched.
     u32 length (verified on all 6 local samples via `dump_depot_headers.js`)
     (§5.8).
 18. **H3 closed:** v2 relative depot URLs are served by the S3 origin
-    (`http://2pipeline.s3.amazonaws.com/depots/…` 200 + mac-match), and
-    `updates.ghub.logitechg.com/depots/…` is the **same S3 bucket via alias**
-    (`server: AmazonS3`, HTTPS 200, byte-identical; the HTTP listener 403s
-    the depot path) (§2.2, §9).
+    (`http://2pipeline.s3.amazonaws.com/depots/…` 200 + mac-match). Infra
+    correction (this round): `updates.ghub.logitechg.com` is **CloudFront
+    with S3 origin** — manifest captures show both `server: AmazonS3` and
+    `via: …cloudfront.net (CloudFront)`/`x-amz-cf-id`/`x-cache`; the earlier
+    "same bucket via alias / not CloudFront" phrasing is **[DISPROVEN]**.
+    The HTTP listener 403s the depot path (HTTPS works) (§2.2, §9).
 19. **Request headers on all pipeline JSON requests** —
     `pipeline_build_install_headers` (0x14022BE90) sends exactly
     `logi-install-id` (machine id @pipeline_impl+880) + `logi-app-version`
     (Downloader vfunc6) on update.json/details.json/`/settings`; URL builders
-    are 5-segment base + suffix with **no query parameters**; host from
-    settings/IPC, not a literal (§2.0.1, §2.0.2).
+    are 5-segment base + suffix with **no query parameters in the traced
+    client builders**; the runtime host comes from settings/IPC — the
+    hostname *is* a binary literal (element 0 of the 4-host array, §1.1)
+    (§2.0.1, §2.0.2).
 20. **H6 machine identifier chain** — type-1 id = 64-hex SHA-256(computer
     name UTF-16LE incl. NUL + C: volume serial LE32)
-    (`canary_machine_id_derive_name_volume` 0x140A386E0); else HDD serial +
-    transform (0x140A34940 unmapped); persisted load-or-generate in logi
-    SecureStorage container
+    (`canary_machine_id_derive_name_volume` 0x140A386E0); else C: volume
+    serial as **decimal string** (e.g. `4199704679`;
+    `SystemInfo::GetVolumeSerial` → 0x140A34940, transform semantics
+    unmapped); persisted load-or-generate in logi SecureStorage container
     `HKLM\SOFTWARE\Logitech\LGHUB\Data\canary_machine_identifier` (396 B
     REG_BINARY) (§2.0.3).
 21. **Server-side canary bucketing** — deterministic per
     `logi-install-id` value (~4/6 64-hex test ids → canary; absent/empty →
-    public); canary/public content for ghub10/win identical apart from
-    `channel`+`lastModified` (§2.0.3, §9). This **supersedes** the earlier
+    public); canary/public for ghub10/win are the **same build**, differing
+    only in `channel`+`lastModified` fields (not byte-identical objects)
+    (§2.0.3, §9). This **supersedes** the earlier
     "stateless API, same manifest for everyone" reading.
 22. **Version decision = plain string equality** (not semver);
     downgrade-capable (`pipeline_impl_has_new_build_to_download`
@@ -1129,6 +1266,37 @@ evidence bodies in `RE_Work/probes/` are untouched.
     component→flag tree, no local bucketing; `/settings` 403 here ⇒ canary
     download state 3 (§2.0.4). Update-flow entry `_check_for_updates`
     (0x1402142E0) + `pipeline_impl` 0x3B0 layout confirmed (§2.0.5).
+24. **Non-public channels exist (tim, staging) with opaque bodies** — 200 on
+    both suffixes; bodies fail JSON parse and carry no known magics;
+    structural facts: update.json is the leading section of details.json
+    (205/207 B and 196/198 B common ciphertext prefixes), staging details =
+    public + 1 B, tim details 129,198 B smaller (different manifest
+    content). The earlier "staging recovered" claim is **[DISPROVEN]** —
+    that file is a circular XOR of an assumption (§2.5). Bounded
+    client-side key-material search (71 group keys × 6 modes, 1,426 derived
+    candidates × 6 modes, PBKDF2-IV variants, ECB check over 58,675
+    positions) = 0 hits; the binary has no manifest-decryption code path ⇒
+    key material is not in this updater build; encoding + consumer
+    **[UNRESOLVED]** (§2.5, §9, `RE/API_FINDINGS.md`).
+25. **Depot key reference is by-name** — sample `key-id`
+    `b895e0bb-0970-4eb5-a623-ab5abc2fddfd` ∈ live content.json (71 entries,
+    16-B keys, version field must be 1 per binary check) (§4.1, §5.6).
+26. **v1 API live and schema-diffed** — ghub12 v1 update.json (710935 /
+    2026.2.861817); ghub10 v1 details 224,746 B: per-depot `cipherSuite:"none"`,
+    absolute S3 URLs, no `uuid`/`signatures`/`keys` (§3.2, §9).
+27. **GCM counter convention (reference)** — for 96-bit IV: `J0 = IV || 0³¹ ||
+    1`, first keystream block `E(J0+1) = E(IV || 0x00000002)`; non-96-bit IV:
+    `J0 = GHASH_H(IV || 0ˢ || [len(IV)]64)`; all-zeros test vector
+    C `0388dace60b6a392f328c2b971b2fe78` / T
+    `ab6e47d42cec13bdf53a67b21257bddf` — matches OpenSSL exactly. Source:
+    NIST SP 800-38D + McGrew/Viega GCM spec Appendix B (local copies in
+    `RE_Work/probes/`); the GF(2¹²⁸) multiply follows the NIST reference
+    `gcm.c` (bit-reversed representation, R = 0x87 in last byte). Documented
+    for the API format; depot decryption itself is out of project scope
+    (closed 2026-09-07, user-directed).
+28. **Machine-id type≠1 path** — `SystemInfo::GetVolumeSerial` **decimal
+    string** of the C: volume serial (this machine: `4199704679`), not a
+    hashed HDD serial (§2.0.3, corrected).
 
 ## 12. Active hypotheses
 
@@ -1136,11 +1304,14 @@ evidence bodies in `RE_Work/probes/` are untouched.
 |---|---|---|
 | H1 | Depot v1 TBS is the raw 32-byte mac digest (not hex) | **CONFIRMED (2026-09-07):** offline TBS reproduction (`tbs_digest_test.mjs`) + binary `+104` input buffer (§6.3, §11.14) |
 | H2 | v2 manifest TBS is some canonicalization of `details.json` (e.g. protobuf-encoded, or a specific JSON serialization) | **Moot (2026-09-07):** the binary never verifies the top-level v2 signature — there is no client-side TBS to identify (§6.4, §11.13) |
-| H3 | v2 relative depot URLs also resolve on `2pipeline.s3.amazonaws.com` | **CONFIRMED (2026-09-07):** S3 origin serves `/depots/{uuid}/{name}.depot` with 200 + mac-match, and `updates.ghub.logitechg.com/depots/…` returns `server: AmazonS3` (S3 alias, not CloudFront) — §2.2, §9 |
+| H3 | v2 relative depot URLs also resolve on `2pipeline.s3.amazonaws.com` | **CONFIRMED (2026-09-07):** S3 origin serves `/depots/{uuid}/{name}.depot` with 200 + mac-match. Infra correction: `updates.ghub.logitechg.com` is **CloudFront + S3 origin** (manifest captures show both header sets) — the earlier "S3 alias, not CloudFront" phrasing is **[DISPROVEN]** — §2.2, §9 |
 | H4 | GCM is used without tag authentication (tag dropped), matching the C++ reference ignoring `Final` | **CONFIRMED for capsule depots** (2026-09-07): both tag layouts fail auth, all chunks decrypt tagless — see §5.2 |
 | H5 | `0x20210521` depots appear only for newer builds | **Layout resolved in binary** (2026-09-07): `files-sha` single-file capsule, full flow in §5.3 — still no live sample captured |
 | H6 | `canary_machine_identifier` gates canary-channel delivery per machine | **CONFIRMED (2026-09-07):** full chain mapped (generation → SecureStorage persistence → `logi-install-id` header) and bucketing proven live (deterministic per id value; ~4/6 64-hex ids → canary) — §2.0.3, §9, §11.20-21. Open detail: server hash/threshold, and byte-level repro of this machine's stored value (§14u) |
 | H7 | Local install 2026.6.957899 is newer than served public 2025.9.814156 because the local machine is on a different channel (canary/enterprise) or the public channel was rolled back | **Partially answered (2026-09-07):** local `lghub_updater.exe` 2026.5.939708 / software manager 2026.5.9708.0 (log 2026-08-08, depot 824196, live self-update SUCCESS) is newer than **every** live channel observed (ghub10 2025.9.814156, ghub12 2026.2.861817); canary==public content on ghub10, so channel alone doesn't explain it. The `User-Agent: 2026.6.957899` string's origin remains unresolved (§14x) |
+| H8 | Brute-forcing channel names reveals extra/hidden builds ("tim" suggests more names exist) | **ANSWERED (2026-09-07):** names are a free-form path segment (no client whitelist); 14 common names → 403, only `staging`/`tim`/`canary` exist beyond `public` for ghub10; the name selects a *manifest*, the depot set always comes from that manifest — there is no name→depot shortcut (§2.5) |
+| H9 | Encrypted-channel (staging/tim) keys are client-derivable from visible data (group UUID, names, SSO ids, PBKDF2) | **DISPROVEN for the tested candidate set (2026-09-07):** 0 hits across all candidate families (a failed candidate set excludes only that material); the key material is not in this updater build; "server-side keying" is the working verdict but the actual consumer is unverified (§2.5, §11.24) |
+| H10 | The updater verifies the v2 top-level manifest signature somewhere at runtime (e.g. in the software manager) | **Open (this build only):** `lghub_updater.exe` does not (§11.13); the software manager binary is the likely consumer of encrypted channels and of `signatures` — not yet analyzed in IDB (deferred) |
 
 ## 13. Disproven / corrected claims
 
@@ -1155,6 +1326,16 @@ evidence bodies in `RE_Work/probes/` are untouched.
 | "Plain depots (0x20170110) have no per-file length prefixes" | **Wrong** — every chunk in every format is `[u32 LE len][data]`; `check_plain_framing.mjs` frames all 5 plain depots exactly to EOF (19,392 / 632 / 192,267 / 97,930 / 21 B) (§5.1) |
 | "The `header-sha` literal is absent from the binary" | **Wrong** — present @0x140F46778; the field name is a runtime parameter passed to `parse_capsule_header` (xrefs 0x14020b331, 0x14023e986) (§5.2) |
 | "IV seed comes from the manifest depot entry (iv/key fields)" | **Wrong** — live v2 depot entries carry only name/size/url/mac/signatures (no iv/key/cipherSuite); the IV seed is the per-chunk expected-plaintext SHA hex string (§5.2, `check_iv_source.mjs`) |
+| "type≠1 machine id = hashed HDD serial (`systeminfo_get_machine_serial`)" | **Wrong (2026-09-07)** — the path is `SystemInfo::GetVolumeSerial` → **decimal string** of the C: volume serial (`4199704679` here); no hash (§2.0.3) |
+| "staging details.json recovered byte-for-byte (= public manifest with `channel:"staging"`)" | **[DISPROVEN — synthetic artifact]** `staging_details_RECOVERED.json` is a circular XOR of an assumed plaintext (K = ct ⊕ A ⇒ ct ⊕ K = A); it proves nothing about staging's content and is excluded from the evidence (§2.5). The body stays opaque |
+| "tim details is a distinct build" (as fact) | Downgraded to **inference**: tim details (809,601 B) is 129,198 B smaller than public ⇒ different manifest content; the exact build is unobservable while the body is opaque (§2.5) |
+| "`updates.ghub.logitechg.com` is an S3 alias of the `2pipeline` bucket, not CloudFront" | **Wrong (2026-09-07)** — captured responses carry both `server: AmazonS3` and CloudFront headers (`via: …cloudfront.net (CloudFront)`, `x-amz-cf-id`, `x-cache`): CloudFront distribution with S3 origin (§2.2, §11.18) |
+| "`updates.ghub.logitechg.com` is absent from the binary" | **Wrong (2026-09-07)** — the hostname is a literal (string-table line 22787; element 0 of the 4-host array @0x1413D8B40). The *runtime* host comes from settings/IPC; the array is a static candidate set (§2.0.1, §1.1) |
+| "tim/staging bodies are AES-GCM ciphertext" | Downgraded to **opaque**: no mode/cipher identification from the observations (shared prefix, sizes, entropy); documented as undetermined encoding (§2.5) |
+| "no query parameters anywhere" (absolute) | Scoped: no query parameters in the **traced client URL builders**; server-side acceptance of query strings is untested (matrix `RE/API_VARIANT_MATRIX.md`) |
+| "`pipeline_impl` +912..+944 = channel" | **Wrong (2026-09-07)** — +912 is the **app id** (`ghub10`); the channel is carried in the urlctx/config (§2.0.5) |
+| "GCM first keystream block for a 12-byte IV is `E(IV ‖ 0²⁴ ‖ 1)`" | **Wrong** — per SP 800-38D, `J0 = IV ‖ 0³¹ ‖ 1`, so the first block is `E(IV ‖ 0x00000002)`; memorized non-spec test vectors were also wrong — always verify against the fetched spec text or a reference implementation (§11.27) |
+| "staging/tim manifest keys derivable client-side (group keys, SSO ids, PBKDF2 variants)" | **Disproven for the tested candidate set (2026-09-07)** — 0 hits over all candidate families (excludes only that material); key material absent from this updater build; consumer unverified (§2.5) |
 | "The protected resource stream's `+0xC0` field is the file's display name" | **Wrong (2026-09-07)** — `+0xC0` holds the record's **sha string**, copied underflow-time into the protection context's PBKDF2 password slot `ctx+0x58`; the display name is never used for decryption (§5.8, §11.16) |
 | "The API is stateless — same `details.json`/`update.json` for everyone" | **Wrong (2026-09-07, H6)** — the server buckets by the `logi-install-id` request header: same build but `channel` flips public↔canary (and `lastModified` changes) per id value; deterministic per id. Header-absent requests default to public (§2.0.3, §9, §11.21) |
 | "`sub_1400DC1F0` is a 16-byte string hash used to build the header map" | **Wrong (2026-09-07)** — it is `std::vector<uint64_t>::resize(n, fill)`; the map node's `+24` vector is filled with node pointers, not a digest. No hashing in the header path (§2.0.2) |
@@ -1217,11 +1398,18 @@ u. **Machine-id byte reproduction / SecureStorage container format** —
     (name `DESKTOP-IFDD7ML` + C: vol serial `0xFA6C8AA7`) does **not** match
     the stored 64-byte value (blob tail @0x14C; nor SHA-512 nor name/vol
     variants — `RE_Work/probes/h6_variant_test.mjs`, `h6_variant2.mjs`).
-    Either the container value is transformed/encrypted by SecureStorage,
-    the id predates a rename/reformat (stale inputs), or this machine uses
-    the type≠1 (HDD serial) path. Container layout: len-prefixed fields
-    ([4][40]"Logi Secure Storage" … [0x40][64 B value]); GUIDs @4/@0x17/@0x64/@0x99
-    role unknown.
+    The type≠1 path is now identified (decimal C: volume-serial string,
+    §2.0.3), but `4199704679` does not appear in the blob either — so the
+    container value is transformed/encrypted by SecureStorage, or the id
+    predates a rename/reformat (stale inputs). **[2026-09-07 corrected
+    container layout]** (`h6_blob_full.txt` + `hexdump_blob.cjs`):
+    `[u32 1] [GUID {DF9D8CD0-1501-11D1-8C7A-00C04FC297EB}] [u32 1]
+    [GUID {36762ECC-DA28-4D3B-A4C9-8297692B1973}] [u32 4] [u32 40]
+    [40 B UTF-16 "Logi Secure Storage"+pad @0x30] [u32 0x6610 @0x58 ?]
+    [u32 1] [u32 32] [32 B blob @0x64 `2ede98ed…`] [u32 0] [u32 0x80E]
+    [u32 0x200] [u32 32] [32 B = two binary GUIDs @0x94]
+    [128 B @0xC4 (8×16 B blocks)] [u32 64 @0x148] [64 B value @0x14C
+    `24739d2e…`] — 396 B total; GUID and intermediate field roles unknown.
 v. **Server-side bucket algorithm** — which hash/threshold over the id
     string (deterministic, ~4/6 64-hex sample → canary; non-64-hex or
     malformed → public; absent/empty → public).
@@ -1235,6 +1423,19 @@ x. **`User-Agent: 2026.6.957899` origin** — raw literal
 y. **86400 s poll interval purpose** — `pipeline_impl_builder_build`
     default; how it maps to scheduler behavior (and whether `/settings` or
     config can change it) is untraced.
+z. **`tim` channel content** — distinct build, 809,601 B ciphertext; the
+    plaintext is recoverable in principle only with more known plaintext
+    (decryption is out of project scope — API reconstruction only).
+aa. **Who consumes the encrypted channels?** — the software manager
+    (separate binary) is the prime candidate; it has not been opened in
+    IDB yet (deferred). Also: who consumes the v2 top-level `signatures`
+    (§6.4, H10)?
+ab. **Per-depot storage-namespace UUIDs** (6× core_* + release_notes in
+    the v2 manifest) — server-side bucket layout only; no client-side
+    reference observed (cosmetic for the client: URLs are opaque).
+ac. **`iat.json` semantics** — still open (item p); the updater GETs it in
+    the keymaster flow (§18.3) as a change-check, but its server-side
+    meaning (invalidate-at?) is undocumented.
 
 ## 15. Exact reproduction
 
@@ -1337,6 +1538,109 @@ Live re-probe (only if needed; keep it small): see §17.
   analyzing; never analyze from memory.
 - Do not probe CN/staging hosts without explicit user approval (unknown
   egress/monitoring implications).
+
+---
+
+## 18. Client-side update flow (binary-confirmed, 2026-09-07)
+
+### 18.1 Update check state machine
+
+`pipeline_impl` (0x3B0 B, §2.0.5) drives the check; state word @+456,
+transition helper `sub_140221F30`:
+
+| State | Meaning (observed) |
+|---|---|
+| 2 | IDLE (settled; "already installed. No new keys either") |
+| 3 | CHECKING (update.json in flight) — set when state bit 8 requests a check |
+| 12 | (transient) → 2 on `_check_for_updates` entry |
+| 13 | OS too old — min-OS string compare vs config+216 |
+
+States 4–11/14+ exist in the enum but were not observed on this path.
+
+### 18.2 Request sequence (all URLs from §2.0.1, all JSON GETs)
+
+```
+1. _check_for_updates (0x1402142E0)
+     guard a1+368 (updates disabled) → return
+     state 12 → 2 ; min-OS too old → state 13
+     bit8 set → state 3 (CHECKING)
+     GET {server}/pipeline/v2/update/{app}/win/{channel}/update.json
+       job factory sub_1402594E0 (group @a1+72, url, installed buildId,
+       callback, headers from §2.0.2; optional extra headers via
+       Downloader vfunc 21/44)
+2. pipeline_impl_on_update_check_result (0x140228430)
+     parse update.json (buildId, version, …)
+     a1+912 = app id string ("ghub10")
+     if next build != installed build:
+        GET …/details.json  (job factory sub_14025AFC0;
+          urlctx {server@+40, channel@+48} via Downloader vfunc 2;
+          group @a1+88; headers §2.0.2)
+        → §18.3 keymaster flow + depot downloads
+     else:
+        log "already installed. No new keys either" → state 2 (IDLE)
+```
+
+Version comparison = **plain string equality** (no semver; downgrades
+possible — §11.22, `pipeline_impl_has_new_build_to_download` 0x1402185D0).
+Depot downloads use the conan package **logi_downloader 3.2.0**
+(RTTI `logi::downloader::DownloaderImpl` / `DownloadJob` /
+`CurlDownloadQuery` / `WinApiDownloadQuery`); per-depot RSA verification
+per §6.3 before install.
+
+### 18.3 Keymaster (access-group key) flow [BINARY]
+
+Triggered after details.json arrives:
+
+```
+details.json  keys.accessGroup = "<uuid>"
+  long_json_download_job::get_details (0x140265360)
+    missing/empty → error "Build access group ID is missing or empty!"
+                   (codes 702/703)
+  keymaster_content_job (ctor 0x140251FA0,
+    onKeymasterComplete 0x140F4E190)
+    GET /pipeline/v2/access/{uuid}/content.json   (200, §4.1)
+    → cache as keys.json (storage fns 0x140231B40 / 0x140233C30 /
+      0x140235850)  — absent on a clean machine until first success
+    GET /pipeline/v2/access/{uuid}/iat.json       (build_iat_json_url
+      0x140269DC0; body {"lastModified": …}) — change-check against the
+      cached content
+  → notify_protection_keys_used
+```
+
+Depot decryption (§5.2) then resolves `header.key-id` against the cached
+key table by **name** (§4.1, §5.6). Note: the updater never verifies the
+v2 top-level manifest signature (§6.4, §11.13).
+
+## 19. Factory config and identity constants [BINARY]
+
+- Config factory `0x140E02460` builds a 0x250-byte config object with
+  defaults: **app id `ghub13`**, **channel `public`**, **min OS
+  `10.0.17763`**, **signature key table id `ghub`**. This machine runs
+  app id `ghub10` (config/IPC override).
+- `pipeline_storage_get_valid_channel` (0x1402005A0): **no client-side
+  channel whitelist** — whatever string is configured is used in the URL
+  (§2.5 channel census is purely a server-side property).
+- Server-hostname allowlist: memcmp table @0x140E01248 (the literal
+  `updates.ghub.logitechg.com` is not in the binary; §2.0.1).
+- **LID client UUID** `b7d2e981-0ca6-4806-91e6-0cbb3bdb94d6` = KV key
+  `lidClient` (getter 0x140E05780, setter 0x140E03910, writer
+  0x140E03D10; config table 0x1410E4F68–0x1410E4FA0) — identity token
+  client id, not a pipeline parameter.
+
+## 20. SSO client ids (software manager binary) [BINARY]
+
+Recovered from the software-manager PE (not the updater), file offsets
+`0xC586CC`–`0xC587BC`, stride 0x30 (`RE_Work/probes/
+reprobe_access_keys_2026-09-07/sso_client_ids.json`):
+
+| Region | Client id (32-hex) |
+|---|---|
+| CN ×3 | `e5fa04de24153837ce00d64e133a3be2`, `1ad7bf2fb3fa4f2010f9ad9491977cfb`, `b811e77fe061c9daeb13245391c4d9ae` |
+| global ×3 | `170d2d1f9153bf5117acbf2dd932c6d4`, `98120664d3c63d9e70fdac56826d95a5`, `c266f32f0fd8d0de16dafc65257bb2b4` |
+
+These are OAuth-style client identifiers for Logitech's SSO endpoints;
+they were tested as encrypted-channel key material (§2.5) with 0 hits —
+consistent with their purpose being login, not update-channel crypto.
 
 ---
 

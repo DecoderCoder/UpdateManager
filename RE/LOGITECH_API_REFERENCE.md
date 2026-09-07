@@ -18,17 +18,21 @@ Quick summary of what is **verified** (full detail in the reference):
 1. `mac` = SHA-256 of raw depot bytes (6 depots checked).
 2. Depot signatures verify with the embedded 4096-bit "ghub" public key
    (SHA-256-of-mac-digest scheme, proven by PKCS#1 unpadding + DigestInfo
-   forensics); all 1,333 live manifest signatures are 512 B ⇒ the updater
-   runs as app `"ghub"`.
+   forensics); all 1,333 live manifest signatures are 512 B — consistent
+   with the 4096-bit "ghub" key being the runtime key (the runtime app-name
+   variable is an inference from key selection, not an observed value).
 3. Encrypted capsule depots (magic `0x20210506`) decrypt with
    AES-128-GCM, key = base64 keymaster key selected by header `key-id`,
    IV = PBKDF2-HMAC-SHA512(expected-SHA-hex, key name, 1000) per chunk —
    reproduced for all 9 chunks of a saved sample.
 4. Full endpoint/keymaster discovery chain exercised live (manifest
-   `keys.accessGroup` → `/pipeline/v2/access/{uuid}/content.json`); depot
-   objects are served directly by S3 — `updates.ghub.logitechg.com` is an S3
-   alias of the `2pipeline` bucket (`server: AmazonS3`), and v2 relative
-   depot URLs also resolve on the S3 origin (H3 confirmed 2026-09-07).
+   `keys.accessGroup` → `/pipeline/v2/access/{uuid}/content.json`).
+   Infrastructure: `updates.ghub.logitechg.com` is a **CloudFront
+   distribution with S3 origin** — captures show both `server: AmazonS3`
+   and `via: …cloudfront.net (CloudFront)` / `x-amz-cf-id` / `x-cache`
+   (the earlier "S3 alias, not CloudFront" claim was wrong); v2 relative
+   depot URLs also resolve on the S3 origin `2pipeline.s3.amazonaws.com`
+   (H3 confirmed 2026-09-07).
 5. Random-access depot reads ("resource_access") fully mapped in the binary:
    `CapsuleMetadata` indexes a depot (offset/size trees over the `[u32 len]`
    chunk scan) and `capsule_open_file`/`capsule_verify_file`/
@@ -38,31 +42,56 @@ Quick summary of what is **verified** (full detail in the reference):
    (§5.8 of the reference).
 6. **URL construction + request headers (2026-09-07):** all pipeline JSON
    URLs are a 5-segment base (`server, pipeline/v2/update, appId, win,
-   channel`) + a fixed suffix (`/update.json`, `/details.json`, `/settings`),
-   with **no query parameters anywhere**; the host comes from settings/IPC,
-   not a binary literal. Every such request carries exactly two headers —
-   `logi-install-id` (per-machine identifier) and `logi-app-version` —
-   built by `pipeline_build_install_headers` (0x14022BE90) (§2.0 of the
-   reference).
+   channel`) + a fixed suffix (`/update.json`, `/details.json`, `/settings` —
+   the client's actual settings suffix has no `.json`), with **no query
+   parameters in the traced client builders**; the runtime host comes from
+   settings/IPC (the hostname *is* a binary literal: element 0 of the
+   4-host array @0x1413D8B40 — an earlier "absent" statement was wrong).
+   Every such request carries exactly two headers — `logi-install-id`
+   (per-machine identifier) and `logi-app-version` — built by
+   `pipeline_build_install_headers` (0x14022BE90) (§2.0 of the reference).
 7. **H6 closed (2026-09-07):** the machine identifier (type-1 = 64-hex
-   SHA-256 of computer-name UTF-16LE + C: volume serial; else HDD serial) is
-   persisted in the `HKLM\SOFTWARE\Logitech\LGHUB\Data\canary_machine_identifier`
+   SHA-256 of computer-name UTF-16LE + C: volume serial; else the C: volume
+   serial as a **decimal string**) is persisted in the
+   `HKLM\SOFTWARE\Logitech\LGHUB\Data\canary_machine_identifier`
    SecureStorage container and sent as `logi-install-id`. The **server
    buckets installs by that header deterministically** — absent/empty →
    `public`, most well-formed 64-hex ids → `canary` (~4/6 tested) — so the
    earlier "stateless, same manifest for everyone" reading was wrong. For
-   ghub10/win, canary and public currently serve identical build content
-   (only `channel` + `lastModified` differ). Version selection is plain
-   string equality (downgrade-capable), and FeatureCanary is fed by the
-   `/settings` response (403 on this host ⇒ canary disabled here).
-8. **Local install data (H7, 2026-09-07):** local updater 2026.5.939708 and
+   ghub10/win, canary and public serve the **same build** (differing only
+   in `channel` + `lastModified`; not byte-identical objects). Version
+   selection is plain string equality (downgrade-capable), and FeatureCanary
+   is fed by the `/settings` response (403 on this host ⇒ canary disabled
+   here).
+8. **Channel census (2026-09-07):** channel is a free-form path segment
+   (no client whitelist). For ghub10/win: `public`/`canary` → 200 plaintext
+   JSON; `tim` (update 207 B / details 809,601 B) and `staging` (update
+   198 B / details 938,800 B) → 200 with **opaque bodies** (fail JSON
+   parse, no known magics — encoding + consumer unresolved, *not*
+   decrypted); 14 further probed names → 403 S3 XML. Structural fact:
+   `update.json` is the leading section of `details.json` (strict prefix
+   in public; 205/207 and 196/198 B common prefixes on the encoded
+   channels). An earlier "staging recovered" claim was **disproven** —
+   that file is a circular XOR of an assumption (§2.5, §13 of the
+   reference).
+9. **Local install data (H7, 2026-09-07):** local updater 2026.5.939708 and
    software manager 2026.5.9708.0 (log of 2026-08-08: depot 824196, live
    self-update SUCCESS) are newer than every observed live channel
    (ghub10 2025.9.814156 incl. canary; ghub12 2026.2.861817), so channel
    alone doesn't explain the local-newer-than-live state.
 
+Companion deliverables (this round):
+
+- **[`RE/API_VARIANT_MATRIX.md`](API_VARIANT_MATRIX.md)** — tested route
+  × app × platform × channel × suffix × HTTP-behavior combinations,
+  results, and the exact coverage achieved (not a claim of exhaustiveness).
+- **[`RE/API_FINDINGS.md`](API_FINDINGS.md)** — evidence-backed
+  discoveries plus the unresolved hypotheses, each tied to fixtures.
+
 Known open items: GCM tag placement in `0x20210521`, `/settings` schema
 (403 on this host), the SecureStorage container format / machine-id byte
 repro, the server-side bucket hash, xdelta depot layout, `/scarif/keyswap`
-semantics, the `2026.6.957899` UA origin, and the post-factory result chain
-— see §14 of the reference.
+semantics, the `2026.6.957899` UA origin, the post-factory result chain,
+the encoding + consumer of the tim/staging opaque channel bodies, and the
+server-side acceptance of query parameters / alternate headers — see §14 of
+the reference and `RE/API_FINDINGS.md`.
