@@ -173,10 +173,10 @@ i.e. 512 bytes, for every one):
 
 ```jsonc
 {
-  "name": "core",                         // human name OR UUID (encrypted capsule depots are named by UUID, see §5.4)
+  "name": "core",                         // human name OR UUID (encrypted capsule depots are named by UUID, see §5.5)
   "size": 270677711,                       // exact byte count of the depot object
   "url": "/depots/3b51d0b7-…-ca1d6dea66c8/core.depot",  // relative in v2
-  "mac": "5b3f76fa…9798",                  // 64-hex: SHA-256 of the raw depot bytes (CONFIRMED, §5.6)
+  "mac": "5b3f76fa…9798",                  // 64-hex: SHA-256 of the raw depot bytes (CONFIRMED, §5.7)
   "signatures": {
     "version": 1,
     "signatures": [ { "signature": "6ac80c83…381d" } ]   // object-wrapped hex, 512 bytes
@@ -244,7 +244,7 @@ dead. The binary contains config keys (see §8) that may be served by it.
   "lastModified": 1765286821,              // unix epoch seconds (2025-12-09T18:47:01Z)
   "keys": [
     {
-      "name": "c91f9b21-5280-44de-9e67-9c39aaea28ad",  // UUID; also the PBKDF2 salt (§5.5)
+      "name": "c91f9b21-5280-44de-9e67-9c39aaea28ad",  // UUID; also the PBKDF2 salt (§5.6)
       "version": 1,
       "lastModified": 1756990707,
       "key": "nPq32LjaydO0k9bKn5I3/g=="    // base64 of 16 raw bytes → AES-128 key
@@ -256,6 +256,13 @@ dead. The binary contains config keys (see §8) that may be served by it.
 
 **[OFFLINE-PROOF]** `key` always decodes to 16 bytes (`verify-saved-sample.mjs`
 asserts this for the key used by the saved depot).
+
+**[BINARY] How the updater finds this file:** the manifest's top-level
+`keys.accessGroup` UUID is read by `long_json_download_job::get_details`
+(0x140265360; missing/empty → error "Build access group ID is missing or
+empty!", code 702/703), and the content URL is built by
+`build_content_json_url` (0x1402692a0) = `/pipeline/v2/access/` +
+`{accessGroup-uuid}` + `/content.json`.
 
 ### 4.2 `iat.json`
 
@@ -274,7 +281,7 @@ Common envelope for all observed formats [OFFLINE-PROOF]
 offset 0:  u32 LE  magic
 offset 4:  u32 LE  headerJsonLen
 offset 8:  headerJsonLen bytes of UTF-8 JSON (header object)
-offset 8+headerJsonLen: payload, layout depends on magic
+offset 8+headerJsonLen: payload — u32-length-prefixed chunks for every magic
 ```
 
 ### 5.1 Format A — plaintext multi-file depot, magic `0x20170110`
@@ -287,12 +294,15 @@ samples. Header:
 { "files": [ { "name": "manifest.json", "mode": 33206 }, … ] }
 ```
 
-Payload (after the header JSON): concatenation of the file contents, in
-`files[]` order, **no per-file length prefixes** — the only framing is the
-header file list and the depot `size`/`mac` in the manifest.
-([HYPOTHESIS] file boundaries are recovered from the total size + known
-file sizes elsewhere in the app, or are simply concatenated and split by the
-consumer; the updater writes each file from the stream. Not fully verified.)
+Payload (after the header JSON): the same **length-prefixed chunk** layout as
+Format B — one `[u32 LE len][data]` chunk per file, in `files[]` order.
+[OFFLINE-PROOF, 2026-09-07] `RE_Work/probes/check_plain_framing.mjs` frames all 5 saved
+plain depots exactly to EOF (19,392 / 632 / 192,267 / 97,930 / 21 B), matching the
+binary: `capsule_write_data_chunk` (0x14020EA20) reads the u32 length prefix before
+building the stream chain in every format — the plain depot is the no-key,
+no-compression degenerate case of that same code path. Plain file-list entries
+carry only `name` + `mode` (no `sha`, no `link`) [OFFLINE-PROOF, all 5
+samples]; both are optional in the binary's 104-byte record (§5.4).
 
 File `mode` values [OFFLINE-PROOF, int_convert-verified]: standard POSIX
 st_mode values — `33188 = 0o100644`, `33206 = 0o100666`,
@@ -306,11 +316,27 @@ B; `core_apps`: 49,603 B) [LIVE `magic_inventory.json`].
 
 Observed on 24 sampled depots whose **names are UUIDs** (e.g.
 `85875e86-f3e1-4e79-91ee-232575e2807f`) [LIVE `magic_scan_broad.json`].
-Header (only two fields):
+Header fields [BINARY: `read_capsule_filter_header` 0x14020B2C0 dispatches on
+the magic; `parse_capsule_header` 0x14020B5F0 reads them]:
 
 ```json
 { "header-sha": "a59dd1b3…122f1", "key-id": "b895e0bb-0970-4eb5-a623-ab5abc2fddfd" }
 ```
+
+| Field | Required | Purpose |
+|---|---|---|
+| `header-sha` | **yes** — `json.at(field)` throws nlohmann type_error 302 if missing or non-string | PBKDF2 password (ASCII hex) for chunk 0; must equal `sha256(chunk-0 plaintext)` |
+| `key-id` | no | keymaster `find()` → the 16-byte AES key for all chunks |
+| `compression` | no | if `"xz"`, wrap the decrypted stream in `DecompressedStream` (xz is the only code — type 2) |
+
+Magic gate [BINARY]: `0x20170110` → empty header (plain, §5.1); `0x20210506` →
+header above; any other magic →
+`capsule_exception("Capsule magic header mismatch!")`. The literal
+`"header-sha"` (0x140F46778) is passed as a **runtime parameter** (SSO stack
+string, len 10) — which is why string-table scans of the parser body missed
+it. Xrefs of the literal: `read_capsule_filter_header` (0x14020B2C0) and
+`sub_14023E920` (§14e). Note also `check_headersha.mjs`: `header-sha` is **not**
+`sha256` of the header JSON bytes — it hashes the chunk-0 plaintext.
 
 Payload: **length-prefixed chunks** [OFFLINE-PROOF on the saved 175,132 B
 depot; 9 chunks, last ends exactly at EOF]:
@@ -331,11 +357,21 @@ Decryption — **fully reproduced offline** for the saved sample
 | IV (per chunk, 32 bytes) | `PBKDF2-HMAC-SHA512(password = <expected SHA as ASCII hex string>, salt = key.name (UUID string), iterations = 1000, dkLen = 32)` |
 | Expected SHA, chunk 0 | `header["header-sha"]` |
 | Expected SHA, chunk i+1 | `files[i]["sha"]` |
-| AAD | none assumed (never established — see tag note) |
+| AAD | none [BINARY `DecryptedStream_ctor` 0x140272FB0 — none is ever set; see tag note] |
+| Key struct | `Key` { `name` string @+0x10 (the PBKDF2 salt), base64 key @+0x18 (standard base64 → 16 B), `version` @+0x28 — must be 1, else `capsule_exception("Unsupported key version: %d")` } [BINARY] |
 
 After decryption, `sha256(chunk0 plaintext) == header-sha` and
 `sha256(chunk[i] plaintext) == files[i-1].sha` held for all 9 chunks of the
-saved sample. **This is the verified recipe**; it matches the C++ reference
+saved sample. **[BINARY, closed 2026-09-07]** the updater itself makes exactly
+this call: `DecryptedStream_ctor` (0x140272FB0; its vtable symbol proves the
+signature `DecryptedStream(const Key&, std::string const&, shared_ptr<buffered_stream>)`)
+calls OpenSSL `PKCS5_PBKDF2_HMAC` (0x140ABA080, renamed) with
+`pass = <per-chunk SHA as ASCII hex>`, `salt = Key.name` (Key+0x10),
+`iter = 0x3E8 (1000)`, `md = EVP_sha512` (static EVP_MD @0x14104DAA0,
+`md_size = 64`), `keylen = 32` → the 32-byte IV; it then standard-base64-decodes
+Key+0x18 via `base64_decode` (0x140C139C0, renamed; suffix arg `"=+/"` =
+padding + the 62/63 chars, i.e. the standard alphabet) into the 16-byte AES key and initializes the
+AES-128-GCM context at `this+0x20`. This is the verified recipe; it matches the C++ reference
 ([OWN] `UpdateManager.cpp:764-817`, `Utils/Encryption.h` — PBKDF2
 `0x3E8 = 1000` iterations, 0x20-byte output, per-file IV at line 817).
 
@@ -354,12 +390,53 @@ depots) is still open.
 
 ### 5.3 Format C — encrypted single-file depot, magic `0x20210521`
 
-**[BINARY]** A third magic exists in the updater: a code path that reads a
-raw depot with a size limit of `0x6400000` (100 MiB, via `int_convert`) for
-this new single-file format. **[UNRESOLVED]** its exact layout; none of the
-60 sampled depots showed this magic on 2026-09-06.
+**[BINARY, closed 2026-09-07]** A third magic: the **individual-file
+capsule**. Layout: identical to Format B — same `[u32 magic][u32 len][JSON
+header]` + u32-length-prefixed data chunks, same AES-128-GCM/PBKDF2 recipe —
+but the required header SHA field is **`files-sha`** instead of `header-sha`:
+`read_indiv_file_first_chunk` (0x14020B4E0) passes it as the runtime field
+name to `parse_capsule_header`. `check_indiv_file_magic` (0x14020A0A0)
+accepts only `0x20210521` and rejects the two capsule magics with
+`capsule_exception("Is a capsule, not an individual file")` (magic cached at
+reader +112, flag +120). Write path: `write_indiv_file_to_stream` (0x140092740,
+8 MiB reader) — magic `0x20210521` → header +
+`capsule_write_data_chunk(pwd = files-sha)`; anything else → raw buffered
+copy. Magic values (all `int_convert`-verified): `0x20170110` = 538378512,
+`0x20210506` = 539034886, `0x20210521` = 539034913. No live sample captured
+(0 of 60 prefixes, 2026-09-06) — sampling one would close the GCM-tag
+question for this variant (§14a).
 
-### 5.4 Naming convention observation
+
+### 5.4 File records and extraction flow [BINARY]
+
+The files-list JSON entries parse into **104-byte records**
+(`file_list_from_json` 0x140208F90, renamed in IDB):
+
+```
+offset 0:   std::string name   (required)
+offset 32:  int       mode     (POSIX st_mode)
+offset 40:  std::string link   (optional; non-empty = symlink)
+offset 72:  std::string sha    (optional; PBKDF2 password = sha256(plaintext)
+                               hex, for this file's data chunk)
+```
+
+Extraction (`extract_capsule_to_dir` 0x14020E3E0 → `extract_capsule_files`
+0x140208930): create the output directory (error: "Failed to create depot
+directory '<p>' (<err>)"), read the filter header, read the files-list chunk
+(`read_capsule_json_chunk` 0x14020BE70), parse, then iterate records with a
+104-byte stride:
+
+- `link` empty → open `outdir/name` (`std::ofstream`, error: "Failed to open
+  file for writing: ") and `capsule_write_data_chunk(reader, stream,
+  record.sha)` — for Format A (no key, no `sha`) this degenerates to the plain
+  u32-length-prefixed copy;
+- `link` non-empty → symlink entry in the directory tree, **no data chunk** in
+  the stream.
+
+Intermediate directories are created on demand in a 0x28-byte linked dir map
+(dir mode 0x101 = 257; error: "Failed to create folder for extracted file.").
+
+### 5.5 Naming convention observation
 
 [LIVE] All 36 sampled `0x20170110` depots have human-readable names
 (`core`, `g915_us`, `driver_audio_apo`); all 24 sampled `0x20210506` depots
@@ -367,13 +444,14 @@ are named by UUID. **[HYPOTHESIS]** capsule depots carry app-internal
 content (web assets, per the decrypted sample: `front.webp`,
 `metadata.json`, `device_presets.json`) and are content-addressed.
 
-### 5.5 Key-identity chain (end to end, all confirmed)
+### 5.6 Key-identity chain (end to end, all confirmed)
 
 ```
 manifest depots[i].name "85875e86-…"
   → depot header key-id "b895e0bb-…"
   → /pipeline/v2/access/323e77f5-…/content.json keys[]
      entry name == "b895e0bb-…", key = base64 16 B
+  → Key struct { name (PBKDF2 salt), base64 key 16 B (std alphabet, `base64_decode` 0x140C139C0), version 1 }
   → AES-128-GCM key for all chunks of that depot
 ```
 
@@ -382,7 +460,7 @@ per-feature keys, not per-depot encryption keys, was **wrong**: the depot
 header `key-id` matches a keymaster key 1:1 and that key decrypts the depot
 [OFFLINE-PROOF].
 
-### 5.6 Depot `mac`
+### 5.7 Depot `mac`
 
 `mac` = **SHA-256 of the raw depot object bytes** — confirmed for 6 depots
 (5 plaintext + 1 encrypted capsule) [OFFLINE-PROOF]. It is also the value
@@ -477,12 +555,16 @@ depot_verifier_rsa_set_public_key (0x140279D70)
 depot_verifier_rsa_init (0x140278DE0) — object init, vtable sub_140ABE0B0
 ```
 
-**[HYPOTHESIS → near-confirmed]** The `+104` TBS std::string that
+**[BINARY + OFFLINE-PROOF, closed 2026-09-07]** The `+104` TBS std::string
 `check_signature` passes to the RSA verifier is the **32-byte mac digest**
 (raw, not hex) for version-1 depot signatures — this is the only input
 consistent with the offline proof (§6.1) and the "Computed digest of depot
-capsule" log. Direct confirmation of the update-input buffer in the IDB is
-still on the open list (§15d).
+capsule" log. **CONFIRMED** two ways: (1) `RE_Work/tools/tbs_digest_test.mjs`
+reproduces the RSA PKCS#1 v1.5 signature by feeding the verifier
+`sha256(raw 32-byte mac digest)` under the embedded ghub 4096 key; (2) the
+binary's `EVP_DigestVerifyUpdate` input is that raw 32-byte digest (struct
++104 in `check_signature` 0x1402636E0), so the signed value is
+`sha256(raw digest)` — exactly the §6.1 scheme. Open item §14d is closed.
 
 ### 6.4 Top-level v2 manifest signature
 
@@ -491,16 +573,23 @@ Forensically the same key and padding: `publicDecrypt` with the ghub 4096
 key yields a SHA-256 DigestInfo whose digest is
 `3ff742238baf70bb4374ab7ae9361ae11e2b48942f83ffc92e1ce4124035e656`.
 
-**[UNRESOLVED] The to-be-signed (TBS) byte string is not yet identified.**
-Exhausted offline (all fail to match): raw `details.json` as fetched;
+**[BINARY, closed 2026-09-07] The updater never verifies the top-level v2
+manifest signature at all.** `depository_from_details_json` (0x14026D920,
+renamed) accepts exactly `{version, appId, buildId, branch, depots}` and never
+reads the top-level `uuid`, `signatures`, or `keys`; `depot_signatures_from_json`
+(0x14026EC60, renamed) is the **only** per-depot signature parser and throws
+"Invalid signatures version" for any per-depot `signatures.version` > 1 (v1
+only); both `check_signature` call sites are depot-level. The TBS is whatever
+the pipeline server chooses to sign — the client does not consume it, so the
+offline TBS search below is moot by design (kept for the record): raw
+`details.json` as fetched;
 minified JSON; `\n`/`\r\n` variants; trailing-trimmed; `appId`/`buildId`/
 `uuid`/`version` combinations; double-SHA-256 of each of the above;
 `details.json` with `signatures` removed; with `depots` removed; with the
 top-level signature object removed (inner digest `1299e57baf1541433f64a0c9`);
 `update.json` raw (inner `d49209e5aef823d6a1b49d93`);
 `settings.settings` raw (inner `6c6ee7d74b6060fc5dc18b62`).
-Next step: trace the C++ v2 verify call site in the IDB to see which buffer
-`check_signature` receives when version == 2 (open item §15b).
+(Open item §14b is closed as moot: no client-side v2 verify call site exists.)
 
 ### 6.5 Negative result on purpose [OFFLINE-PROOF]
 
@@ -541,9 +630,18 @@ hint at regional deployment and a lockdown mode, both **[UNRESOLVED]**.
   (default 1). **[UNRESOLVED]** the differential depot layout (likely xdelta3
   patch + base-depot reference; no sample captured).
 - **Compressed depots:** `capsule_download_group::
-  download_compressed_depot_async`; `DecompressedStream` ctor
-  sub_140272C00. **[UNRESOLVED]** compression algorithm (zlib? lz4? brotli?)
-  and framing.
+  download_compressed_depot_async`; `DecompressedStream_ctor` (0x140272C00,
+  renamed). **[RESOLVED 2026-09-07]** algorithm = **xz only** (type code 2,
+  literal `xz`); optional per depot via the header `compression` field;
+  stream order = decrypt → decompress (`build_capsule_stream_chain`
+  0x140240B40, renamed).
+- **Capsule extraction:** `extract_capsule_to_dir` (0x14020E3E0) →
+  `extract_capsule_files` (0x140208930): create outdir, filter header,
+  files-list chunk, then per 104-byte record — regular file →
+  `capsule_write_data_chunk(pwd = record.sha)` (degenerates to a plain
+  u32-length-prefixed copy for Format A), symlink (`link` non-empty) →
+  directory entry with **no data chunk** (§5.4). `pipeline://` URIs resolve to
+  these extracted paths.
 - **Local cache:** `simple_cache_manager::*` — depots are cached locally
   before install (explains partial downloads; not reverse-engineered).
 - **URI scheme:** `pipeline://` with regex
@@ -629,6 +727,10 @@ evidence bodies in `RE_Work/probes/` are untouched.
 | depot header dumper | `RE_Work/tools/dump_depot_headers.js` |
 | inner files-list dumper | `RE_Work/tools/dump_inner_files.js` |
 | depot fetcher (UA, 400 ms delay) | `RE_Work/probes/fetch_depot.mjs` |
+| TBS = raw 32-byte digest proof (§6.3) | `RE_Work/tools/tbs_digest_test.mjs` |
+| plain-depot framing verifier, PASS×5 exact EOF (§5.1) | `RE_Work/probes/check_plain_framing.mjs` |
+| header-sha ≠ sha256(header bytes); it hashes chunk-0 plaintext (§5.2) | `RE_Work/probes/check_headersha.mjs` |
+| manifest v2 depot entries carry no iv/key/cipherSuite (§5.2) | `RE_Work/probes/check_iv_source.mjs` |
 | IDB (all renames/comments saved) | `C:\Program Files\LGHUB\lghub_updater.exe.i64` |
 
 **STALE, to delete:** `RE_Work/probes/resp_pipeline_v2_update_ghub10_win_public_details.json`
@@ -662,17 +764,40 @@ evidence bodies in `RE_Work/probes/` are untouched.
    `/pipeline/v2/access/{uuid}/content.json` — fully exercised.
 8. **Manifest v1/v2 schema differences** (URL style, cipherSuite,
    signatures, keys, uuid).
-9. **Three depot magics** (two with captured layout, one binary-only).
+9. **Three depot magics — all three layouts now closed:** `0x20170110`
+   (plain, u32-length-prefixed chunks, PASS×5 offline), `0x20210506`
+   (encrypted capsule, 9/9 chunks reproduced), `0x20210521` (individual-file
+   capsule, `files-sha` variant; binary layout closed, no live sample yet).
+10. **Plain-depot framing:** every plain depot is `[u32 magic][u32 len]
+    [files-list JSON]` + one `[u32 LE len][content]` chunk per regular file,
+    framing exactly to EOF on all 5 samples (`check_plain_framing.mjs`); plain
+    entries carry no `sha`/`link` (§5.1).
+11. **PBKDF2 recipe in the binary:** `DecryptedStream_ctor` (0x140272FB0)
+    calls OpenSSL `PKCS5_PBKDF2_HMAC` (0x140ABA080) with `pass` = per-chunk
+    SHA hex, `salt` = `Key.name`, `iter` = 0x3E8 (1000), `md` = `EVP_sha512`
+    (md_size 64 @0x14104DAA0), `dkLen` = 32; AES key = standard-base64
+    `Key+0x18` → 16 B (`base64_decode` 0x140C139C0); `Key.version` must be 1
+    (§5.2).
+12. **File records + extraction:** 104-byte record `{name@0, mode@32,
+    link@40, sha@72}`; symlink = non-empty `link` with no data chunk
+    (`extract_capsule_to_dir`/`extract_capsule_files`); stream order
+    decrypt → decompress (xz) (§5.4, §8).
+13. **v2 top-level manifest signature is NOT verified client-side**; only
+    per-depot v1 signatures are (`depository_from_details_json` /
+    `depot_signatures_from_json`) (§6.4).
+14. **Depot v1 TBS = raw 32-byte mac digest** — reproduced offline
+    (`tbs_digest_test.mjs`) and matched to the binary `+104` input
+    (§6.3).
 
 ## 12. Active hypotheses
 
 | # | Hypothesis | Status / test |
 |---|---|---|
-| H1 | Depot v1 TBS is the raw 32-byte mac digest (not hex) | Near-confirmed by offline proof + logs; IDB buffer confirmation pending (§15d) |
-| H2 | v2 manifest TBS is some canonicalization of `details.json` (e.g. protobuf-encoded, or a specific JSON serialization) | All JSON variants exhausted; need C++ call-site trace (§15b) |
+| H1 | Depot v1 TBS is the raw 32-byte mac digest (not hex) | **CONFIRMED (2026-09-07):** offline TBS reproduction (`tbs_digest_test.mjs`) + binary `+104` input buffer (§6.3, §11.14) |
+| H2 | v2 manifest TBS is some canonicalization of `details.json` (e.g. protobuf-encoded, or a specific JSON serialization) | **Moot (2026-09-07):** the binary never verifies the top-level v2 signature — there is no client-side TBS to identify (§6.4, §11.13) |
 | H3 | v2 relative depot URLs also resolve on `2pipeline.s3.amazonaws.com` | Testable with 1–2 GETs |
 | H4 | GCM is used without tag authentication (tag dropped), matching the C++ reference ignoring `Final` | **CONFIRMED for capsule depots** (2026-09-07): both tag layouts fail auth, all chunks decrypt tagless — see §5.2 |
-| H5 | `0x20210521` depots appear only for newer builds | Needs a build where they exist; none in ghub10/ghub12 2025.9 |
+| H5 | `0x20210521` depots appear only for newer builds | **Layout resolved in binary** (2026-09-07): `files-sha` single-file capsule, full flow in §5.3 — still no live sample captured |
 | H6 | `canary_machine_identifier` gates canary-channel delivery per machine | Look for the setter/getter in IDB |
 | H7 | Local install 2026.6.957899 is newer than served public 2025.9.814156 because the local machine is on a different channel (canary/enterprise) or the public channel was rolled back | Compare canary manifest content; check local channel config |
 
@@ -681,11 +806,14 @@ evidence bodies in `RE_Work/probes/` are untouched.
 | Claim (earlier) | Correction |
 |---|---|
 | "All depots are public / the API is fully open" | Only **sampled** depots were fetched (60 prefixes + 6 full); the 403s prove access-policy restrictions exist (name-based access, settings) |
-| "keymaster keys are feature keys, not per-depot keys" | Wrong — the header `key-id` matches a keymaster key 1:1 and it decrypts the depot (§5.5) |
+| "keymaster keys are feature keys, not per-depot keys" | Wrong — the header `key-id` matches a keymaster key 1:1 and it decrypts the depot (§5.6) |
 | "The client does not verify depot signatures" | Contradicted: full RSA verify path exists and is wired into depot validation (§6.3) |
 | "Key A (2048, fp b97bd090…) is the updater's key" | The updater's key is the 4096-bit ghub key (fp `01f43ddda220be2a`); all live sigs are 512 B |
-| "EVP_MD descriptor +8 word is the digest size" | Unconfirmed; NID words (672/668) are certain, trailing 64/120 mapping is open (§15m) |
+| "EVP_MD descriptor +8 word is the digest size" | Unconfirmed; NID words (672/668) are certain, trailing 64/120 mapping is open (§14m) |
 | Depots verified as raw-bytes RSA (single SHA-256) | Fails for every key — the scheme is the double hash over the mac digest (§6.1) |
+| "Plain depots (0x20170110) have no per-file length prefixes" | **Wrong** — every chunk in every format is `[u32 LE len][data]`; `check_plain_framing.mjs` frames all 5 plain depots exactly to EOF (19,392 / 632 / 192,267 / 97,930 / 21 B) (§5.1) |
+| "The `header-sha` literal is absent from the binary" | **Wrong** — present @0x140F46778; the field name is a runtime parameter passed to `parse_capsule_header` (xrefs 0x14020b331, 0x14023e986) (§5.2) |
+| "IV seed comes from the manifest depot entry (iv/key fields)" | **Wrong** — live v2 depot entries carry only name/size/url/mac/signatures (no iv/key/cipherSuite); the IV seed is the per-chunk expected-plaintext SHA hex string (§5.2, `check_iv_source.mjs`) |
 
 ## 14. Unresolved questions
 
@@ -693,14 +821,15 @@ a. **GCM tag** — **resolved for `0x20210506` capsules (2026-09-07): no
    verifiable tag in last-16 or first-16 layout; decryption is
    unauthenticated, integrity via SHA chain + `mac`** (§5.2). Whether a tag
    appears in `0x20210521` single-file depots remains open.
-b. **v2 manifest signature TBS** — which exact bytes are signed?
+b. **v2 manifest signature TBS** — **moot (2026-09-07):** the client never
+   verifies the top-level v2 signature, so no client-side TBS exists
+   (§6.4, §11.13).
 c. **`settings.settings`** — schema, auth, or dead.
-d. **verify_depot update input** — confirm in IDB that the 32-byte digest
-   (raw) is the `EVP_DigestVerifyUpdate` buffer.
-e. **`sub_14023D7F0` header-sha verify input** — what the capsule-open path
-   hashes before the files list.
-f. **Compression** — algorithm + framing for `DecompressedStream`
-   (sub_140272C00) / `download_compressed_depot_async`.
+d. **verify_depot update input** — **resolved (2026-09-07):** the TBS is the raw 32-byte mac digest, reproduced offline (`tbs_digest_test.mjs`) and matched to the binary `+104` input (§6.3, §11.14).
+e. **Second `header-sha` caller `sub_14023E920`** — xref 0x14023e986 of the
+   `header-sha` literal @0x140F46778; a different capsule-open path, not yet
+   fully traced.
+f. **Compression** — **resolved (2026-09-07): xz only** (type code 2, literal `xz`), optional per depot via the header `compression` field; stream order decrypt → decompress (`build_capsule_stream_chain` 0x140240B40, `DecompressedStream_ctor` 0x140272C00) (§8).
 g. **xdelta differential depot** layout.
 h. **Depot variants** beyond the 3 magics (if any).
 i. **Local 2026.6.957899 > live 2025.9.814156** — channel or rollback?
@@ -715,12 +844,11 @@ o. **HTTP caching** — **resolved for 200s (2026-09-07 re-probe)**: strong
    ETag + Last-Modified, no Cache-Control (§9). Range/resume behavior still
    untested.
 p. **`iat.json`** purpose.
-q. **Plaintext-depot file framing** — how consumers split the concatenated
-   payload (sizes come from where?).
+q. **Plaintext-depot file framing** — **resolved (2026-09-07):** one `[u32 LE len][data]` chunk per regular file, in `files[]` order, framing exactly to EOF on all 5 samples (`check_plain_framing.mjs`); sizes come from those per-chunk prefixes, not the manifest (§5.1).
 
 ## 15. Exact reproduction
 
-From the repository root, no network needed for 1–4:
+From the repository root, no network needed for 1–12:
 
 ```powershell
 # 1. Offline crypto baseline (5 plaintext depots + encrypted capsule):
@@ -748,6 +876,14 @@ node RE_Work/tools/dump_inner_files.js
 node RE_Work/probes/decrypt_headersha.mjs
 #    → tag-last16: auth failed; tag-first16: auth failed;
 #      all 9 chunks sha-match unauthenticated
+# 9. TBS = raw 32-byte mac digest (proves §6.3 / §11.14; bun or node):
+bun RE_Work/tools/tbs_digest_test.mjs
+# 10. header-sha hashes chunk-0 plaintext, not the header JSON bytes (§5.2):
+node RE_Work/probes/check_headersha.mjs
+# 11. live v2 depot entries carry no iv/key/cipherSuite (§5.2):
+node RE_Work/probes/check_iv_source.mjs
+# 12. plain-depot framing = u32 chunks, exact EOF, 5/5 depots (§5.1 / §11.10):
+node RE_Work/probes/check_plain_framing.mjs
 ```
 
 Live re-probe (only if needed; keep it small): see §17.
