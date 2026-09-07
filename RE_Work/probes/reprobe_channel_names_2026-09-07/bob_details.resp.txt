@@ -1,0 +1,16 @@
+GET https://updates.ghub.logitechg.com/pipeline/v2/update/ghub10/win/bob/details.json
+403 Forbidden
+{
+  "connection": "keep-alive",
+  "content-type": "application/xml",
+  "date": "Mon, 07 Sep 2026 09:24:20 GMT",
+  "server": "AmazonS3",
+  "transfer-encoding": "chunked",
+  "via": "1.1 c6e3892c4e3632cf2174c8451ef1477c.cloudfront.net (CloudFront)",
+  "x-amz-cf-id": "nSwsP5Rv8wOpGbv8aEsTifrjrK6_yx2JPTlNFB0bb3Qh2Je40lUgGQ==",
+  "x-amz-cf-pop": "HAM50-P4",
+  "x-cache": "Error from cloudfront"
+}
+
+(first 64 bytes)
+3c3f786d6c2076657273696f6e3d22312e302220656e636f64696e673d225554462d38223f3e0a3c4572726f723e3c436f64653e41636365737344656e696564

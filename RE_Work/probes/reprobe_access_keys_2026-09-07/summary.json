@@ -1,0 +1,55 @@
+{
+  "server": "https://updates.ghub.logitechg.com",
+  "group": "323e77f5-68c2-43d8-8457-818bbd663938",
+  "targets": [
+    {
+      "name": "content.json",
+      "url": "https://updates.ghub.logitechg.com/pipeline/v2/access/323e77f5-68c2-43d8-8457-818bbd663938/content.json",
+      "status": 200,
+      "bytes": 11536,
+      "ms": 476,
+      "err": null,
+      "headers": {
+        "accept-ranges": "bytes",
+        "connection": "keep-alive",
+        "content-length": "11536",
+        "content-type": "application/json",
+        "date": "Mon, 07 Sep 2026 12:32:45 GMT",
+        "etag": "\"14138a65188e8374d15069ba3ea4109c\"",
+        "last-modified": "Tue, 09 Dec 2025 13:27:02 GMT",
+        "server": "AmazonS3",
+        "via": "1.1 f5ae3d62f08f3d34255cd7a3049c8eca.cloudfront.net (CloudFront)",
+        "x-amz-cf-id": "YVWfZ_CSdBARCLVtlvUMqvDFJjESvypxqhV-34K_3QioqeZuzwSG7Q==",
+        "x-amz-cf-pop": "HAM50-P4",
+        "x-amz-server-side-encryption": "AES256",
+        "x-cache": "Miss from cloudfront"
+      },
+      "out": "RE_Work\\probes\\reprobe_access_keys_2026-09-07"
+    },
+    {
+      "name": "iat.json",
+      "url": "https://updates.ghub.logitechg.com/pipeline/v2/access/323e77f5-68c2-43d8-8457-818bbd663938/iat.json",
+      "status": 200,
+      "bytes": 32,
+      "ms": 29,
+      "err": null,
+      "headers": {
+        "accept-ranges": "bytes",
+        "age": "5808",
+        "connection": "keep-alive",
+        "content-length": "32",
+        "content-type": "application/json",
+        "date": "Mon, 07 Sep 2026 10:55:57 GMT",
+        "etag": "\"7ff0ac28caacb101bc82033357a0c945\"",
+        "last-modified": "Tue, 09 Dec 2025 13:27:02 GMT",
+        "server": "AmazonS3",
+        "via": "1.1 f5ae3d62f08f3d34255cd7a3049c8eca.cloudfront.net (CloudFront)",
+        "x-amz-cf-id": "KMGYtSS7PfBj5b34shyeKljhuFk1f8i5qxm-DSaDXSTQ-LeKxSJ6jw==",
+        "x-amz-cf-pop": "HAM50-P4",
+        "x-amz-server-side-encryption": "AES256",
+        "x-cache": "Hit from cloudfront"
+      },
+      "out": "RE_Work\\probes\\reprobe_access_keys_2026-09-07"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+GET https://updates.ghub.logitechg.com/pipeline/v2/update/ghub10/win/tim/details.json
+200 OK
+{
+  "connection": "keep-alive",
+  "content-encoding": "br",
+  "content-type": "application/json",
+  "date": "Mon, 07 Sep 2026 09:24:19 GMT",
+  "etag": "W/\"685bed32cd5ba3d56d9c15b1793c47aa\"",
+  "last-modified": "Thu, 13 Aug 2026 10:14:42 GMT",
+  "server": "AmazonS3",
+  "transfer-encoding": "chunked",
+  "vary": "Accept-Encoding",
+  "via": "1.1 c6e3892c4e3632cf2174c8451ef1477c.cloudfront.net (CloudFront)",
+  "x-amz-cf-id": "hsJxNtn7we56lQel00tqB2l1H6PNiqZpn_oKQ3Qj-XYxtT2cOm8eeA==",
+  "x-amz-cf-pop": "HAM50-P4",
+  "x-amz-server-side-encryption": "AES256",
+  "x-cache": "Miss from cloudfront"
+}
+
+(first 64 bytes)
+7c218389fc62ba89879509daf2b47ada9620d10db736648ee95431daa8ea7aa95dc62e23f05cae1991ea69941684f55ed2d37324b6299ee4265b8b7a5159387b

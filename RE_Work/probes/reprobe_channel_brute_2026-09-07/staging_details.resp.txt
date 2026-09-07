@@ -1,0 +1,18 @@
+GET https://updates.ghub.logitechg.com/pipeline/v2/update/ghub10/win/staging/details.json
+age: 15
+connection: keep-alive
+content-encoding: br
+content-type: application/json
+date: Mon, 07 Sep 2026 10:18:32 GMT
+etag: W/"2c957fdb60781b3c24c2f5e9a1a9a450"
+last-modified: Wed, 10 Dec 2025 22:39:18 GMT
+server: AmazonS3
+transfer-encoding: chunked
+vary: Accept-Encoding
+via: 1.1 84f86e65e32c605d02ec441dcf95ba78.cloudfront.net (CloudFront)
+x-amz-cf-id: 3MVrzdkgX1Kf4hnAfFzcYvyZVbNzeS85TIE65Aq9Nkh3DqoiwCxzEA==
+x-amz-cf-pop: HAM50-P4
+x-amz-server-side-encryption: AES256
+x-cache: Hit from cloudfront
+
+status: 200

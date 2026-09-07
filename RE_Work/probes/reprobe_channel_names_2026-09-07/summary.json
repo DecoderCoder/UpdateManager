@@ -1,0 +1,50 @@
+{
+  "app": "ghub10",
+  "rows": [
+    {
+      "name": "tim_details",
+      "status": 200,
+      "bytes": 809601,
+      "type": "application/json",
+      "magic": "unknown",
+      "etag": "W/\"685bed32cd5ba3d56d9c15b1793c47aa\"",
+      "ms": 878
+    },
+    {
+      "name": "tim_update",
+      "status": 200,
+      "bytes": 207,
+      "type": "application/json",
+      "magic": "unknown",
+      "etag": "\"5749039a9b7a3938da226edd26f2a1a8\"",
+      "ms": 328
+    },
+    {
+      "name": "bob_details",
+      "status": 403,
+      "bytes": 263,
+      "type": "application/xml",
+      "magic": "XML-ish",
+      "etag": null,
+      "ms": 314
+    },
+    {
+      "name": "zzqq_details",
+      "status": 403,
+      "bytes": 263,
+      "type": "application/xml",
+      "magic": "XML-ish",
+      "etag": null,
+      "ms": 312
+    },
+    {
+      "name": "public_details",
+      "status": 200,
+      "bytes": 938799,
+      "type": "application/json",
+      "magic": "JSON-ish",
+      "etag": "W/\"93208d1198a5be93a085849b1f128ee9\"",
+      "ms": 767
+    }
+  ]
+}
