@@ -76,9 +76,21 @@ Quick summary of what is **verified** (full detail in the reference):
    reference).
 9. **Local install data (H7, 2026-09-07):** local updater 2026.5.939708 and
    software manager 2026.5.9708.0 (log of 2026-08-08: depot 824196, live
-   self-update SUCCESS) are newer than every observed live channel
-   (ghub10 2025.9.814156 incl. canary; ghub12 2026.2.861817), so channel
-   alone doesn't explain the local-newer-than-live state.
+   self-update SUCCESS). **Largely closed by the matrix round:** live
+   `ghub13/win/public` serves buildId 824196 / 2026.5.939708 — exactly the
+   local build; the local machine is on app **ghub13** (the updater's
+   factory-default app id), not ghub10/ghub12.
+10. **Variant matrix round (2026-09-07, 30 live requests):** apps
+   **ghub10/ghub12/ghub13** live (ghub99 control → 403); platform tokens
+   **win + osx** live (mac/linux → 403); channel sets are per-app
+   (ghub12 has staging but **not** tim); **query parameters ignored**;
+   **`logi-app-version` has no observable server-side effect** (bucketing
+   is `logi-install-id`-driven); Range → 206, conditionals → 304,
+   case/slash variants → 403 (single template); S3 **ListObjects disabled**
+   (403, corrected test); depots CDN-cached (`x-cache: Hit` + `age`);
+   `pipeline.logitech.io` = **internal private us-east-1 ALB** (unreachable
+   publicly); v1/v2 `update.json` = same object for ghub12 (v1 is
+   server-side legacy — no v1 literal in either client binary).
 
 Companion deliverables (this round):
 
@@ -92,6 +104,7 @@ Known open items: GCM tag placement in `0x20210521`, `/settings` schema
 (403 on this host), the SecureStorage container format / machine-id byte
 repro, the server-side bucket hash, xdelta depot layout, `/scarif/keyswap`
 semantics, the `2026.6.957899` UA origin, the post-factory result chain,
-the encoding + consumer of the tim/staging opaque channel bodies, and the
-server-side acceptance of query parameters / alternate headers — see §14 of
-the reference and `RE/API_FINDINGS.md`.
+the encoding + consumer of the tim/staging opaque channel bodies, ghub13
+manifest content (details not yet fetched — would supply a `0x20210521`
+candidate), and methods beyond GET/HEAD — see §14 of the reference and
+`RE/API_FINDINGS.md`.

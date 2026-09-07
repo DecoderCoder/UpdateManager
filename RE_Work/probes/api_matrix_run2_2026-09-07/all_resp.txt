@@ -1,0 +1,59 @@
+
+=== E1_ghub13_update_get ===
+200 OK
+accept-ranges: bytes
+connection: keep-alive
+content-length: 190
+content-type: application/json
+date: Mon, 07 Sep 2026 16:51:17 GMT
+etag: "05b2339f0d9a33c216e2e14d417f86f9"
+last-modified: Tue, 11 Aug 2026 14:37:04 GMT
+server: AmazonS3
+via: 1.1 53817635acfcc09a55e924ffb9cf530c.cloudfront.net (CloudFront)
+x-amz-cf-id: rRS4DMwjoD7SVtoO7jKZmIa5ZYEB9yFri6sx8nsvFt6pcRTFCkuFPA==
+x-amz-cf-pop: HAM50-P4
+x-amz-server-side-encryption: AES256
+x-cache: Miss from cloudfront
+
+=== E2_osx_update_get ===
+200 OK
+accept-ranges: bytes
+connection: keep-alive
+content-length: 197
+content-type: application/json
+date: Mon, 07 Sep 2026 16:51:18 GMT
+etag: "d344d37fcc2b2cdaf84992507d3bd06d"
+last-modified: Mon, 08 Jun 2026 17:02:32 GMT
+server: AmazonS3
+via: 1.1 53817635acfcc09a55e924ffb9cf530c.cloudfront.net (CloudFront)
+x-amz-cf-id: 4FKPwqE-7MeTcRqc5PwTxqrBeftVw3FdS9mY-nL0zx-F5_FdAJ6RXw==
+x-amz-cf-pop: HAM50-P4
+x-amz-server-side-encryption: AES256
+x-cache: Miss from cloudfront
+
+=== E3_ghub12_tim_head ===
+403 Forbidden
+connection: close
+content-type: application/xml
+date: Mon, 07 Sep 2026 16:51:18 GMT
+server: AmazonS3
+via: 1.1 53817635acfcc09a55e924ffb9cf530c.cloudfront.net (CloudFront)
+x-amz-cf-id: coTn7RMZXR16nAMm89USE3j--sshcMssytqmZa2tSQB757SIyOdhDA==
+x-amz-cf-pop: HAM50-P4
+x-cache: Error from cloudfront
+
+=== E4_ghub12_staging_head ===
+200 OK
+accept-ranges: bytes
+connection: close
+content-length: 198
+content-type: application/json
+date: Mon, 07 Sep 2026 16:51:20 GMT
+etag: "7d44412e060cc7e1e9343308ba665354"
+last-modified: Wed, 25 Mar 2026 03:33:15 GMT
+server: AmazonS3
+via: 1.1 72dc991b96d784bf847cfbba2a46cba6.cloudfront.net (CloudFront)
+x-amz-cf-id: 8pEM09sAlVrjlp6ejW1oxIJPI7Znrt3TDVciCUaN7a5iFWjW5ggiHA==
+x-amz-cf-pop: HAM50-P4
+x-amz-server-side-encryption: AES256
+x-cache: Miss from cloudfront

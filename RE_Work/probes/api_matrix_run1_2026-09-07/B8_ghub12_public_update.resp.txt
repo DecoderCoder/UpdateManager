@@ -1,0 +1,14 @@
+HTTP status: 200 OK
+accept-ranges: bytes
+connection: close
+content-length: 197
+content-type: application/json
+date: Mon, 07 Sep 2026 16:49:03 GMT
+etag: "710845ecd40f0bb2e2cad6d7bb6276a5"
+last-modified: Mon, 08 Jun 2026 17:01:42 GMT
+server: AmazonS3
+via: 1.1 f543377aa30377683dcf6190fa92b84e.cloudfront.net (CloudFront)
+x-amz-cf-id: zcEpnFKYXLZ8BqXsTmJG_fipFJai-dflt0fSD9IK-Wvm1fJQDWaEmQ==
+x-amz-cf-pop: HAM50-P4
+x-amz-server-side-encryption: AES256
+x-cache: Miss from cloudfront

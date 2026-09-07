@@ -1,0 +1,10 @@
+HTTP status: 403 Forbidden
+connection: keep-alive
+content-type: application/xml
+date: Mon, 07 Sep 2026 16:49:09 GMT
+server: AmazonS3
+transfer-encoding: chunked
+via: 1.1 a0b5d32085670707650634edb389ae58.cloudfront.net (CloudFront)
+x-amz-cf-id: gehjhjh4_TSgVX_zLSRIJrUEWxqr6KBH2XgfbpTczmnmHH-7b3GMEQ==
+x-amz-cf-pop: HAM50-P4
+x-cache: Error from cloudfront

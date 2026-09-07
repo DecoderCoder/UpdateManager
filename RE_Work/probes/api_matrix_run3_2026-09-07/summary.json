@@ -1,0 +1,97 @@
+{
+  "outdir": "C:\\Users\\Decode\\source\\repos\\UpdateManager\\RE_Work\\probes\\api_matrix_run3_2026-09-07",
+  "count": 3,
+  "probes": [
+    {
+      "id": "F1_appversion_cur",
+      "note": "app-version = current served version",
+      "url": "https://updates.ghub.logitechg.com/pipeline/v2/update/ghub10/win/public/update.json",
+      "method": "GET",
+      "reqHeaders": {
+        "logi-app-version": "2025.9.814156"
+      },
+      "tsUTC": "2026-09-07T16:54:45.275Z",
+      "status": 200,
+      "respHeaders": {
+        "accept-ranges": "bytes",
+        "age": "340",
+        "connection": "keep-alive",
+        "content-length": "197",
+        "content-type": "application/json",
+        "date": "Mon, 07 Sep 2026 16:49:05 GMT",
+        "etag": "\"e6a093b9c4a83e6cade28c9dabc4bd27\"",
+        "last-modified": "Mon, 08 Jun 2026 17:02:47 GMT",
+        "server": "AmazonS3",
+        "via": "1.1 0525ea7a9ae8ff1bbb46a4d023fe5f64.cloudfront.net (CloudFront)",
+        "x-amz-cf-id": "jZfFGNlnm6qJajp-z88wJYt-GgPCj0l9tTe_SkONAxp6NGqu64THLg==",
+        "x-amz-cf-pop": "HAM50-P4",
+        "x-amz-server-side-encryption": "AES256",
+        "x-cache": "Hit from cloudfront"
+      },
+      "bodySha256": "c6707c3681e79e8b9b75067944c2a6bf02ea8c4ec03507c6b73d6ac1bb8258a6",
+      "byteLen": 197,
+      "error": null
+    },
+    {
+      "id": "F2_appversion_fut",
+      "note": "app-version = far-future (server-side gating?)",
+      "url": "https://updates.ghub.logitechg.com/pipeline/v2/update/ghub10/win/public/update.json",
+      "method": "GET",
+      "reqHeaders": {
+        "logi-app-version": "9999.1.1"
+      },
+      "tsUTC": "2026-09-07T16:54:46.126Z",
+      "status": 200,
+      "respHeaders": {
+        "accept-ranges": "bytes",
+        "age": "340",
+        "connection": "keep-alive",
+        "content-length": "197",
+        "content-type": "application/json",
+        "date": "Mon, 07 Sep 2026 16:49:05 GMT",
+        "etag": "\"e6a093b9c4a83e6cade28c9dabc4bd27\"",
+        "last-modified": "Mon, 08 Jun 2026 17:02:47 GMT",
+        "server": "AmazonS3",
+        "via": "1.1 0525ea7a9ae8ff1bbb46a4d023fe5f64.cloudfront.net (CloudFront)",
+        "x-amz-cf-id": "Tf7W_v9IqpM0SHOflAYdVWiZ0FpBfBFxVQ5cJOJYRcxq-472LITMqA==",
+        "x-amz-cf-pop": "HAM50-P4",
+        "x-amz-server-side-encryption": "AES256",
+        "x-cache": "Hit from cloudfront"
+      },
+      "bodySha256": "c6707c3681e79e8b9b75067944c2a6bf02ea8c4ec03507c6b73d6ac1bb8258a6",
+      "byteLen": 197,
+      "error": null
+    },
+    {
+      "id": "F3_both_headers",
+      "note": "canary id + future app-version (interaction?)",
+      "url": "https://updates.ghub.logitechg.com/pipeline/v2/update/ghub10/win/public/update.json",
+      "method": "GET",
+      "reqHeaders": {
+        "logi-install-id": "0000000000000000000000000000000000000000000000000000000000000000",
+        "logi-app-version": "9999.1.1"
+      },
+      "tsUTC": "2026-09-07T16:54:46.906Z",
+      "status": 200,
+      "respHeaders": {
+        "accept-ranges": "bytes",
+        "age": "340",
+        "connection": "keep-alive",
+        "content-length": "197",
+        "content-type": "application/json",
+        "date": "Mon, 07 Sep 2026 16:49:06 GMT",
+        "etag": "\"69ed3902fe9423d25b3dee099ee1f433\"",
+        "last-modified": "Mon, 08 Jun 2026 17:02:44 GMT",
+        "server": "AmazonS3",
+        "via": "1.1 0525ea7a9ae8ff1bbb46a4d023fe5f64.cloudfront.net (CloudFront)",
+        "x-amz-cf-id": "NNmzVronzm3UGE7eBqrrReIoFFwhEgSW-MsFTOBlgjtRmq9_zyA2vw==",
+        "x-amz-cf-pop": "HAM50-P4",
+        "x-amz-server-side-encryption": "AES256",
+        "x-cache": "Hit from cloudfront"
+      },
+      "bodySha256": "77a90c8a0d6c086fcdf9f455954c6a987fdf7866c43ffac53c7ff53fbdad4677",
+      "byteLen": 197,
+      "error": null
+    }
+  ]
+}

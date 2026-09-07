@@ -1,0 +1,15 @@
+HTTP status: 200 OK
+accept-ranges: bytes
+age: 69764
+connection: close
+content-length: 632
+content-type: application/octet-stream
+date: Sun, 06 Sep 2026 21:26:28 GMT
+etag: "883a0cfd054764f4d57a72c0f31ad5fa"
+last-modified: Wed, 10 Dec 2025 22:36:21 GMT
+server: AmazonS3
+via: 1.1 a0b5d32085670707650634edb389ae58.cloudfront.net (CloudFront)
+x-amz-cf-id: 3R_xIVQ-A4Cv853FFOPECaVe4skV6o_tWX57GI_f9Tjm-la3mxSTPA==
+x-amz-cf-pop: HAM50-P4
+x-amz-server-side-encryption: AES256
+x-cache: Hit from cloudfront

@@ -1,0 +1,8 @@
+HTTP status: 403 Forbidden
+content-type: application/xml
+date: Mon, 07 Sep 2026 16:48:53 GMT
+server: AmazonS3
+transfer-encoding: chunked
+x-amz-bucket-region: us-east-1
+x-amz-id-2: kLjf40/iDtnLdYbhphK1iV8wVuiRTSP+YsTdJoIfwPM0kno5rLYXtegJSQHGGLiID4nno/LUjpORB46vNXrD66lWm4f5lNFJ
+x-amz-request-id: 0BGMX4R9FMS640QF

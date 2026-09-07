@@ -1,0 +1,9 @@
+HTTP status: 403 Forbidden
+connection: close
+content-type: application/xml
+date: Mon, 07 Sep 2026 16:48:59 GMT
+server: AmazonS3
+via: 1.1 e85d5fd6b26b1ebffa5d55114ed4415e.cloudfront.net (CloudFront)
+x-amz-cf-id: -Lg3efvn-Di9PU6PhGnYIetskY5cn1-Nxz-tWqBQOUYEc-GJvf3IBg==
+x-amz-cf-pop: HAM50-P4
+x-cache: Error from cloudfront

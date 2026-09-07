@@ -1,0 +1,11 @@
+HTTP status: 304 Not Modified
+age: 32862
+connection: keep-alive
+date: Mon, 07 Sep 2026 16:49:13 GMT
+etag: "883a0cfd054764f4d57a72c0f31ad5fa"
+server: AmazonS3
+via: 1.1 0868858143e380e74cee1003289bf1c0.cloudfront.net (CloudFront)
+x-amz-cf-id: cq5_cwaGYG1VWZMgpVRIW9YD8wzeQie3eK8JUm8Z56-XMV7SJ9tayg==
+x-amz-cf-pop: HAM50-P4
+x-amz-server-side-encryption: AES256
+x-cache: Hit from cloudfront

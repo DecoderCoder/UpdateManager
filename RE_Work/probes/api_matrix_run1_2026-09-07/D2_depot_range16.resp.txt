@@ -1,0 +1,14 @@
+HTTP status: 206 Partial Content
+connection: keep-alive
+content-length: 16
+content-range: bytes 0-15/632
+content-type: application/octet-stream
+date: Mon, 07 Sep 2026 16:49:13 GMT
+etag: "883a0cfd054764f4d57a72c0f31ad5fa"
+last-modified: Wed, 10 Dec 2025 22:36:21 GMT
+server: AmazonS3
+via: 1.1 0868858143e380e74cee1003289bf1c0.cloudfront.net (CloudFront)
+x-amz-cf-id: TRPa9n6nXuEZ6yimhYPuUTSc_Idxklma8ijbWYObT_JLdUxnUcH86g==
+x-amz-cf-pop: HAM50-P4
+x-amz-server-side-encryption: AES256
+x-cache: Miss from cloudfront

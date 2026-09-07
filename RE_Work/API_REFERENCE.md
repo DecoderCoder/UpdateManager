@@ -384,6 +384,51 @@ tim/staging is not in this updater build; the consumer component is
 Coverage and open questions: `RE/API_VARIANT_MATRIX.md` (what was
 probed) and `RE/API_FINDINGS.md` (findings + unresolved hypotheses).
 
+### 2.6 App / platform / host inventory [LIVE, 2026-09-07 matrix round]
+
+30 live requests (run dirs `api_matrix_run{1,2,3}_2026-09-07/`, full
+metadata per request):
+
+**Apps (v2, `win`, `public`):** `ghub10` (197 B / 938,799 B), `ghub12`
+(197 B / 992,526 B), **`ghub13` — new, live** (update 190 B: buildId
+**824196 / 2026.5.939708**, branch `staging/2026_5`, lastModified
+2026-08-11; details **1,106,793 B**). `ghub99` (control) → 403.
+`ghub13`'s served build **exactly matches the local install**
+(updater 2026.5.939708, depot 824196 in the 2026-08-08 software-manager
+log) ⇒ the local machine is on **ghub13** (the factory-default app id,
+§2.0.5/§11.19) — **H7 partially closed** (the "local newer than live"
+observation was an app-identity artifact; the `2026.6.957899` UA origin
+remains open).
+
+**Platforms:** `win` + **`osx` live** (ghub10/osx public update 200:
+buildId 625362 / 2025.9.807501); `mac`/`linux` → 403. A Linux token may
+exist under another name — untested.
+
+**Channels × app:** `tim` exists on ghub10 but **403 on ghub12**;
+`staging` exists on both (ghub12 staging update 198 B, ETag
+`7d44412e…`, Last-Modified 2026-03-25 — different object from ghub10's).
+Channel sets are **per-app** (matrix §4).
+
+**Hosts:** `updates.ghub.logitechg.com` → CloudFront `d2l2wc59w4vrl3`
+(S3 origin); **`pipeline.logitech.io` is internal** — DNS CNAME
+`internal-pipeline-prod-alb-1144201675.us-east-1.elb.amazonaws.com` →
+**172.30.91.104/172.30.90.118** (private us-east-1 ALB), unreachable from
+the public internet (connection-level failure, not HTTP).
+`stg-pipeline.np.logitech.io` not probed (constraint).
+
+**HTTP behavior (matrix §6):** 206 Range (manifests **and** depots —
+depot range 0-15 = `0x20170110` header), 304 If-Modified-Since /
+If-None-Match, trailing-slash and uppercase → 403, **query parameters
+ignored** (`?foo=bar&channel=canary` byte-identical to baseline),
+**`logi-app-version` has no observable server-side effect** (3 tested
+values; bucketing is driven by `logi-install-id` alone). S3
+ListObjectsV2 (corrected bucket-root + `prefix` form) → 403 ×3 —
+**enumeration disabled**. 403 is a single template; 263 vs 243 B is just
+variable `RequestId`/`HostId` length. v1/v2 `update.json` for ghub12 are
+the **same object** (identical ETag); no v1 route literal exists in either
+client binary — v1 is server-side legacy. Depot objects are CDN-cached
+(`x-cache: Hit`, age ≈ 19 h on HEAD; `Miss` on Range requests).
+
 ---
 
 ## 3. Manifest schemas
@@ -1091,6 +1136,7 @@ hint at regional deployment and a lockdown mode, both **[UNRESOLVED]**.
 | Channel census 2026-09-07 (`probe_channel_names.mjs`, `probe_channel_brute.mjs`; outdirs `reprobe_channel_names_2026-09-07/`, `reprobe_channel_brute_2026-09-07/`) | `staging` 200 ct 938,800 B; `tim` 200 ct 809,601 B; `canary` 200 = public size; 14 other names → **403** S3 XML (§2.5) |
 | Access-group re-probe 2026-09-07 (`probe_access_keys.mjs`, outdir `reprobe_access_keys_2026-09-07/`) | content.json 200, 11,536 B, 71 keys (unchanged); iat.json 200 `{ "lastModified": 1765286821 }` (§4.1) |
 | v1/v2 cross-check 2026-09-07 (`reprobe_2026_09_07/*`) | ghub12 v1 `update.json` 200 (710935 / 2026.2.861817 / branch `staging/2026_2_ghub12`); ghub10 v1 details 200, 224,746 B = v2's 648 depots with `cipherSuite:"none"` + absolute S3 URLs, no `keys` (§3.2) |
+| Variant matrix round 2026-09-07 (`probe_api_matrix{,2,3}.mjs`; outdirs `api_matrix_run{1,2,3}_2026-09-07/`, 30 reqs, 0 tool errors, no 429/503) | **ghub13 live** (update 190 B: 824196/2026.5.939708 = local build ⇒ H7 largely closed; details 1,106,793 B); **osx live** (197 B, 625362/2025.9.807501), mac/linux 403; ghub12×tim **403**, ghub12×staging 200 (198 B, ETag `7d44412e…`); query params **ignored** (byte-identical baseline); `logi-app-version` ×3 values **no observable effect**; Range **206** on manifests+depots, If-Modified-Since/If-None-Match **304**; trailing-slash/uppercase **403** (same template; 263 vs 243 B = RequestId/HostId length); S3 ListObjectsV2 (corrected form) **403** ×3 (listing disabled); depot HEAD `x-cache: Hit` (age ≈ 19 h) — CDN caches depots too; `pipeline.logitech.io` DNS → **private us-east-1 ALB** (172.30.91.104/118) — internal host, fetch failed (connection level); v1/v2 ghub12 `update.json` = same object (identical ETag). Full cell ledger: `RE/API_VARIANT_MATRIX.md` |
 
 **[LIVE] Cache semantics (2026-09-07 re-probe,
 `RE_Work/probes/reprobe_2026_09_07/probe_summary.json`):** every 200 carries
@@ -1308,7 +1354,7 @@ evidence bodies in `RE_Work/probes/` are untouched.
 | H4 | GCM is used without tag authentication (tag dropped), matching the C++ reference ignoring `Final` | **CONFIRMED for capsule depots** (2026-09-07): both tag layouts fail auth, all chunks decrypt tagless — see §5.2 |
 | H5 | `0x20210521` depots appear only for newer builds | **Layout resolved in binary** (2026-09-07): `files-sha` single-file capsule, full flow in §5.3 — still no live sample captured |
 | H6 | `canary_machine_identifier` gates canary-channel delivery per machine | **CONFIRMED (2026-09-07):** full chain mapped (generation → SecureStorage persistence → `logi-install-id` header) and bucketing proven live (deterministic per id value; ~4/6 64-hex ids → canary) — §2.0.3, §9, §11.20-21. Open detail: server hash/threshold, and byte-level repro of this machine's stored value (§14u) |
-| H7 | Local install 2026.6.957899 is newer than served public 2025.9.814156 because the local machine is on a different channel (canary/enterprise) or the public channel was rolled back | **Partially answered (2026-09-07):** local `lghub_updater.exe` 2026.5.939708 / software manager 2026.5.9708.0 (log 2026-08-08, depot 824196, live self-update SUCCESS) is newer than **every** live channel observed (ghub10 2025.9.814156, ghub12 2026.2.861817); canary==public content on ghub10, so channel alone doesn't explain it. The `User-Agent: 2026.6.957899` string's origin remains unresolved (§14x) |
+| H7 | Local install 2026.6.957899 is newer than served public 2025.9.814156 because the local machine is on a different channel (canary/enterprise) or the public channel was rolled back | **Largely closed (2026-09-07 matrix round):** the live `ghub13/win/public` channel serves buildId 824196 / **2026.5.939708** — exactly the local updater build and the depot id (824196) in the local 2026-08-08 log. The local machine is on app **ghub13** (the updater's factory-default app id, §2.0.5/§2.6), not ghub10/ghub12; the earlier "newer than every channel" observation was an app-identity artifact (wrong app compared). Residual: the captured `User-Agent: 2026.6.957899` origin is still untraced (findings B4) |
 | H8 | Brute-forcing channel names reveals extra/hidden builds ("tim" suggests more names exist) | **ANSWERED (2026-09-07):** names are a free-form path segment (no client whitelist); 14 common names → 403, only `staging`/`tim`/`canary` exist beyond `public` for ghub10; the name selects a *manifest*, the depot set always comes from that manifest — there is no name→depot shortcut (§2.5) |
 | H9 | Encrypted-channel (staging/tim) keys are client-derivable from visible data (group UUID, names, SSO ids, PBKDF2) | **DISPROVEN for the tested candidate set (2026-09-07):** 0 hits across all candidate families (a failed candidate set excludes only that material); the key material is not in this updater build; "server-side keying" is the working verdict but the actual consumer is unverified (§2.5, §11.24) |
 | H10 | The updater verifies the v2 top-level manifest signature somewhere at runtime (e.g. in the software manager) | **Open (this build only):** `lghub_updater.exe` does not (§11.13); the software manager binary is the likely consumer of encrypted channels and of `signatures` — not yet analyzed in IDB (deferred) |
@@ -1620,8 +1666,10 @@ v2 top-level manifest signature (§6.4, §11.13).
 - `pipeline_storage_get_valid_channel` (0x1402005A0): **no client-side
   channel whitelist** — whatever string is configured is used in the URL
   (§2.5 channel census is purely a server-side property).
-- Server-hostname allowlist: memcmp table @0x140E01248 (the literal
-  `updates.ghub.logitechg.com` is not in the binary; §2.0.1).
+- Server-app-id allowlist: memcmp table @0x140E01248 (app ids, not hosts).
+  The literal `updates.ghub.logitechg.com` **is** in the binary (string
+  line 22787; element 0 of the 4-host array @0x1413D8B40, §2.0.1/§11.19) —
+  an earlier note claiming its absence was corrected 2026-09-07.
 - **LID client UUID** `b7d2e981-0ca6-4806-91e6-0cbb3bdb94d6` = KV key
   `lidClient` (getter 0x140E05780, setter 0x140E03910, writer
   0x140E03D10; config table 0x1410E4F68–0x1410E4FA0) — identity token
