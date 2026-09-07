@@ -1,0 +1,110 @@
+[
+  {
+    "name": "core",
+    "size": 270677711,
+    "magic": "0x20170110",
+    "jsonLen": 32601
+  },
+  {
+    "name": "core_apps",
+    "size": 82845854,
+    "magic": "0x20170110",
+    "jsonLen": 49603
+  },
+  {
+    "name": "core_assets",
+    "size": 21925412,
+    "magic": "0x20170110",
+    "jsonLen": 16204
+  },
+  {
+    "name": "core_runtime_win",
+    "size": 228955226,
+    "magic": "0x20170110",
+    "jsonLen": 346
+  },
+  {
+    "name": "core_qt_win",
+    "size": 5951670,
+    "magic": "0x20170110",
+    "jsonLen": 139
+  },
+  {
+    "name": "core_systray_win",
+    "size": 50632650,
+    "magic": "0x20170110",
+    "jsonLen": 1531
+  },
+  {
+    "name": "gl",
+    "size": 19435903,
+    "magic": "0x20170110",
+    "jsonLen": 198
+  },
+  {
+    "name": "gl_resources",
+    "size": 212226,
+    "magic": "0x20170110",
+    "jsonLen": 1687
+  },
+  {
+    "name": "driver_audio_apo",
+    "size": 26892445,
+    "magic": "0x20170110",
+    "jsonLen": 107
+  },
+  {
+    "name": "driver_audio_devices",
+    "size": 2043061,
+    "magic": "0x20170110",
+    "jsonLen": 111
+  },
+  {
+    "name": "driver_logi_lamparray",
+    "size": 16069575,
+    "magic": "0x20170110",
+    "jsonLen": 117
+  },
+  {
+    "name": "g213_us",
+    "size": 1007995,
+    "magic": "0x20170110",
+    "jsonLen": 133
+  },
+  {
+    "name": "g305",
+    "size": 13414925,
+    "magic": "0x20170110",
+    "jsonLen": 402
+  },
+  {
+    "name": "g403",
+    "size": 4013402,
+    "magic": "0x20170110",
+    "jsonLen": 257
+  },
+  {
+    "name": "g502",
+    "size": 4866440,
+    "magic": "0x20170110",
+    "jsonLen": 329
+  },
+  {
+    "name": "streamcam",
+    "size": 350254,
+    "magic": "0x20170110",
+    "jsonLen": 333
+  },
+  {
+    "name": "logi_install_tool_win",
+    "size": 14792601,
+    "magic": "0x20170110",
+    "jsonLen": 61
+  },
+  {
+    "name": "applet_discord",
+    "size": 3328,
+    "magic": "0x20170110",
+    "jsonLen": 93
+  }
+]
